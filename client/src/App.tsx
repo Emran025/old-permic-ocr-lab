@@ -5,6 +5,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Documentation from "./pages/Documentation";
+import GeneratorNotebook from "./pages/GeneratorNotebook";
 import History from "./pages/History";
 import Home from "./pages/Home";
 import SourceLibrary from "./pages/SourceLibrary";
@@ -17,6 +18,7 @@ function Router() {
       <Route path={"/"} component={Home} />
       <Route path={"/sources"} component={SourceLibrary} />
       <Route path={"/synthetic"} component={SyntheticLab} />
+      <Route path={"/generator-notebook"} component={GeneratorNotebook} />
       <Route path={"/history"} component={History} />
       <Route path={"/documentation"} component={Documentation} />
       <Route path={"/404"} component={NotFound} />
