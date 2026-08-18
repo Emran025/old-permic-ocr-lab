@@ -1,11 +1,12 @@
 import { startLogin } from "@/const";
 import { Button } from "@/components/ui/button";
-import { BookOpen, History, ScanSearch, Sparkles } from "lucide-react";
+import { BookOpen, History, Images, ScanSearch, Sparkles } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 const links = [
   { href: "/", label: "التحليل", icon: ScanSearch },
+  { href: "/sources", label: "المصادر", icon: Images },
   { href: "/history", label: "السجل", icon: History },
   { href: "/documentation", label: "الوثائق", icon: BookOpen },
 ];
@@ -27,17 +28,18 @@ export default function ResearchHeader() {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-1 rounded-full border border-[#e0d8c9] bg-white/70 p-1" aria-label="التنقل الرئيسي">
+        <nav className="mx-2 flex min-w-0 items-center gap-1 overflow-x-auto rounded-full border border-[#e0d8c9] bg-white/70 p-1" aria-label="التنقل الرئيسي">
           {links.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:text-sm ${
+              aria-label={label}
+              className={`flex shrink-0 items-center gap-2 rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:text-sm ${
                 location === href ? "bg-[#2b4b40] text-[#fffaf0]" : "text-[#686b61] hover:bg-[#eee9de] hover:text-[#2b4b40]"
               }`}
             >
               <Icon className="size-3.5" />
-              <span>{label}</span>
+              <span className="hidden md:inline">{label}</span>
             </Link>
           ))}
         </nav>
