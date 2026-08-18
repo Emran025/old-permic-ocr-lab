@@ -59,6 +59,21 @@ export const hostedPrimarySources: HostedPrimarySource[] = [
     description: "تحتوي الصورة على نص ظاهر بالبرمية القديمة. أدرجت بوصفها شاهدًا بصريًا أوليًا صغيرًا، لا بديلًا عن مسح مخطوطة عالي الدقة.",
     alt: "وثيقة قصيرة مكتوبة بالبرمية القديمة",
   },
+  {
+    id: "trinity-zuryanskaya-full-icon",
+    title: "الثالوث الزيرياني — اللوحة الكاملة",
+    subtitle: "السياق الأصلي الذي يحمل شريط النقش البرمي",
+    period: "القرن 14",
+    imageUrl: "/manus-storage/trinity-zuryanskaya-full-icon_07cc4900.jpg",
+    sourceUrl: "https://commons.wikimedia.org/wiki/File:Trinity_Zuryanskaya.jpg",
+    holdingInstitution: "متحف-محمية فولوغدا؛ صورة الإتاحة عبر Wikimedia Commons.",
+    catalogueRecord: "أيقونة «الثالوث الزيرياني»، صورة كاملة بدقة أصلية 3190×5218 بكسل.",
+    rights: "نسخ فوتوغرافي أمين لعمل في الملكية العامة؛ موسوم Public Domain Mark في صفحة الملف.",
+    resolutionNote: "نسخة تصفح بعرض 960 بكسل؛ افتح المصدر الأصلي للصورة الكاملة.",
+    trainingStatus: "صورة سياقية أولية؛ للتدريب يُستخدم شريط النقش المكبر مع وسوم محارف، لا اللوحة كاملة.",
+    description: "تبيّن اللوحة الكاملة موضع النقش في وعائه التاريخي. هي مادة أولية حرة مفيدة لتوثيق المصدر، بينما يبقى شريط النص المكبر الأنسب لتحديد مناطق الكتابة.",
+    alt: "أيقونة الثالوث الزيرياني الكاملة من القرن الرابع عشر",
+  },
 ];
 
 export const externalPrimarySources: ExternalPrimarySource[] = [
