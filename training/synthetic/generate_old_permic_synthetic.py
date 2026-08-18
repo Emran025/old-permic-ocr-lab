@@ -32,12 +32,16 @@ class Profile:
     line_gap: int
     background: tuple[int, int, int]
     ink: tuple[int, int, int]
+    isolated_glyph_extent: float
+    isolated_center_jitter: int
+    background_fragment_count: int
+    background_fragment_delta: int
 
 
 PROFILES: dict[str, Profile] = {
-    "unicode-clean": Profile("unicode-clean", 0.0, 0.0, 0, 0, 12, (250, 247, 238), (36, 48, 41)),
-    "controlled-deformation": Profile("controlled-deformation", 3.0, 0.45, 10, 3, 16, (242, 235, 219), (62, 47, 38)),
-    "manuscript-inspired": Profile("manuscript-inspired", 5.0, 0.7, 18, 5, 20, (232, 221, 197), (73, 51, 35)),
+    "unicode-clean": Profile("unicode-clean", 0.0, 0.0, 0, 0, 12, (250, 247, 238), (36, 48, 41), 0.80, 0, 0, 0),
+    "controlled-deformation": Profile("controlled-deformation", 3.0, 0.45, 10, 3, 16, (242, 235, 219), (62, 47, 38), 0.66, 12, 18, 10),
+    "manuscript-inspired": Profile("manuscript-inspired", 5.0, 0.7, 18, 5, 20, (232, 221, 197), (73, 51, 35), 0.56, 20, 32, 18),
 }
 
 
@@ -76,6 +80,30 @@ def glyph_patch(glyph: str, font: ImageFont.FreeTypeFont, profile: Profile, rng:
     return patch
 
 
+def add_background_fragments(image: Image.Image, profile: Profile, rng: random.Random) -> None:
+    """Add deterministic paper-like rectangular fragments without introducing labelled foreground objects."""
+    if not profile.background_fragment_count:
+        return
+    draw = ImageDraw.Draw(image)
+    for _ in range(profile.background_fragment_count):
+        width = rng.randint(max(12, image.width // 28), max(18, image.width // 7))
+        height = rng.randint(max(8, image.height // 42), max(14, image.height // 14))
+        x = rng.randint(0, max(0, image.width - width))
+        y = rng.randint(0, max(0, image.height - height))
+        delta = rng.randint(-profile.background_fragment_delta, profile.background_fragment_delta)
+        color = tuple(max(0, min(255, channel + delta)) for channel in profile.background)
+        draw.rectangle((x, y, x + width, y + height), fill=color)
+
+
+def isolated_font_size(glyph: str, image_size: int, font_size: int, font_path: Path, profile: Profile) -> int:
+    """Scale the first curriculum glyph to a controlled share of the image."""
+    reference_font = ImageFont.truetype(str(font_path), font_size)
+    bbox = reference_font.getbbox(glyph)
+    extent = max(1, bbox[2] - bbox[0], bbox[3] - bbox[1])
+    target_extent = min(image_size - max(16, image_size // 20), round(image_size * profile.isolated_glyph_extent))
+    return max(font_size, round(font_size * target_extent / extent))
+
+
 def finalize_image(image: Image.Image, profile: Profile, rng: random.Random) -> Image.Image:
     if profile.blur_radius:
         image = image.filter(ImageFilter.GaussianBlur(profile.blur_radius))
@@ -99,16 +127,28 @@ def render_isolated_glyph_sample(
     """Render exactly one labelled character asset (S0)."""
     rng = random.Random(seed)
     image = Image.new("RGB", (image_size, image_size), profile.background)
-    font = ImageFont.truetype(str(font_path), font_size)
+    add_background_fragments(image, profile, rng)
     class_id = rng.randrange(len(characters)) if class_id_override is None else class_id_override
     glyph = characters[class_id]["glyph"]
+    font = ImageFont.truetype(str(font_path), isolated_font_size(glyph, image_size, font_size, font_path, profile))
     patch = glyph_patch(glyph, font, profile, rng)
-    x = rng.randint(24, max(24, image_size - patch.width - 24))
-    y = rng.randint(24, max(24, image_size - patch.height - 24))
+    max_patch_extent = image_size - max(16, image_size // 20)
+    if max(patch.width, patch.height) > max_patch_extent:
+        ratio = max_patch_extent / max(patch.width, patch.height)
+        patch = patch.resize((max(1, round(patch.width * ratio)), max(1, round(patch.height * ratio))), Image.Resampling.LANCZOS)
+    x = (image_size - patch.width) // 2 + rng.randint(-profile.isolated_center_jitter, profile.isolated_center_jitter)
+    y = (image_size - patch.height) // 2 + rng.randint(-profile.isolated_center_jitter, profile.isolated_center_jitter)
+    x = max(0, min(x, image_size - patch.width))
+    y = max(0, min(y, image_size - patch.height))
     image.paste(patch, (x, y), patch)
     center_x, center_y, width, height = normalized_box(x, y, patch.width, patch.height, image_size)
     metadata = {
         "layout_family": "isolated-glyph",
+        "curriculum": {
+            "isolated_glyph_extent": profile.isolated_glyph_extent,
+            "center_jitter": profile.isolated_center_jitter,
+            "background_fragment_count": profile.background_fragment_count,
+        },
         "page_id": None,
         "reading_order": ["glyph-0"],
         "regions": [],

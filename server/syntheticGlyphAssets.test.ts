@@ -48,4 +48,27 @@ describe("synthetic Old Permic glyph assets", () => {
       expect(new Set(classIds).size).toBe(38);
     }
   });
+
+  it("keeps the internal S0 curriculum large and centered before reducing it under controlled deformation", () => {
+    const cleanRoot = mkdtempSync(join(tmpdir(), "old-permic-s0-clean-curriculum-"));
+    const deformedRoot = mkdtempSync(join(tmpdir(), "old-permic-s0-deformed-curriculum-"));
+    roots.push(cleanRoot, deformedRoot);
+    const generator = join(process.cwd(), "training", "synthetic", "generate_old_permic_synthetic.py");
+    const font = "/usr/share/fonts/truetype/noto/NotoSansOldPermic-Regular.ttf";
+    for (const [root, profile] of [[cleanRoot, "unicode-clean"], [deformedRoot, "controlled-deformation"]] as const) {
+      execFileSync("python3", [generator, "--output", root, "--samples", "1", "--seed", "10350", "--layout", "isolated-glyph", "--profile", profile, "--font", font], { encoding: "utf8" });
+    }
+    const firstLabel = (root: string) => {
+      const split = readdirSync(join(root, "labels")).find((name) => readdirSync(join(root, "labels", name)).length > 0)!;
+      return readFileSync(join(root, "labels", split, readdirSync(join(root, "labels", split))[0]), "utf8").trim().split(" ").map(Number);
+    };
+    const [, cleanX, cleanY, cleanWidth, cleanHeight] = firstLabel(cleanRoot);
+    const [, , , deformedWidth, deformedHeight] = firstLabel(deformedRoot);
+    const deformedManifest = JSON.parse(readFileSync(join(deformedRoot, "manifest.json"), "utf8"));
+    expect(Math.max(cleanWidth, cleanHeight)).toBeGreaterThan(0.7);
+    expect(cleanX).toBeCloseTo(0.5, 2);
+    expect(cleanY).toBeCloseTo(0.5, 2);
+    expect(Math.max(deformedWidth, deformedHeight)).toBeLessThan(Math.max(cleanWidth, cleanHeight));
+    expect(deformedManifest.profile.background_fragment_count).toBeGreaterThan(0);
+  });
 });
