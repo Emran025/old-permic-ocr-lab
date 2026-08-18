@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { analyses, InsertAnalysis, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -87,6 +87,46 @@ export async function getUserByOpenId(openId: string) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createAnalysis(analysis: InsertAnalysis) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+
+  const result = await db.insert(analyses).values(analysis);
+  const analysisId = Number(result[0]?.insertId);
+  const created = await db.select().from(analyses).where(eq(analyses.id, analysisId)).limit(1);
+  return created[0];
+}
+
+export async function getAnalysisForUser(analysisId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+
+  const rows = await db
+    .select()
+    .from(analyses)
+    .where(and(eq(analyses.id, analysisId), eq(analyses.userId, userId)))
+    .limit(1);
+  return rows[0];
+}
+
+export async function listAnalysesForUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+
+  return db.select().from(analyses).where(eq(analyses.userId, userId)).orderBy(desc(analyses.createdAt));
+}
+
+export async function updateAnalysisModelStatus(analysisId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+
+  await db
+    .update(analyses)
+    .set({ status: "model_not_configured", completedAt: new Date(), extractedText: "", detections: [] })
+    .where(and(eq(analyses.id, analysisId), eq(analyses.userId, userId)));
+  return getAnalysisForUser(analysisId, userId);
 }
 
 // TODO: add feature queries here as your schema grows.

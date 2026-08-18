@@ -4,6 +4,8 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import Documentation from "./pages/Documentation";
+import History from "./pages/History";
 import Home from "./pages/Home";
 
 function Router() {
@@ -11,6 +13,8 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/history"} component={History} />
+      <Route path={"/documentation"} component={Documentation} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

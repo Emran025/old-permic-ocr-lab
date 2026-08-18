@@ -1,0 +1,14 @@
+{
+  "script": "البرمية القديمة",
+  "unit": "character",
+  "reading_direction": "ltr",
+  "classes": [
+    {
+      "id": 0,
+      "label": "REPLACE_WITH_VERIFIED_UNICODE_GLYPH",
+      "unicode": "U+REPLACE",
+      "transliteration": "REPLACE",
+      "notes": "استبدل هذه القيمة بعد اعتماد فئات مجموعة الصور. لا تغيّر ترتيب المعرّفات بعد بدء الوسم."
+    }
+  ]
+}
