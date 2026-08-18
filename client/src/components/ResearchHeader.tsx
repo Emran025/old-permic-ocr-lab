@@ -1,20 +1,16 @@
-import { startLogin } from "@/const";
-import { Button } from "@/components/ui/button";
-import { BookOpen, History, Images, ScanSearch, Sparkles, Wand2 } from "lucide-react";
+import React from "react";
+import { History, Images, ScanSearch, Sparkles, Wand2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/_core/hooks/useAuth";
 
 const links = [
   { href: "/", label: "التحليل", icon: ScanSearch },
   { href: "/sources", label: "المصادر", icon: Images },
   { href: "/synthetic", label: "الصناعي", icon: Wand2 },
   { href: "/history", label: "السجل", icon: History },
-  { href: "/documentation", label: "الوثائق", icon: BookOpen },
 ];
 
 export default function ResearchHeader() {
   const [location] = useLocation();
-  const { isAuthenticated, user, logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-40 border-b border-[#ded7c9]/70 bg-[#f8f5ef]/90 backdrop-blur-xl">
@@ -45,16 +41,7 @@ export default function ResearchHeader() {
           ))}
         </nav>
 
-        {isAuthenticated ? (
-          <Button variant="ghost" size="sm" onClick={() => logout()} className="hidden text-[#546054] hover:bg-[#eee9de] sm:inline-flex">
-            {user?.name ? `خروج ${user.name}` : "تسجيل الخروج"}
-          </Button>
-        ) : (
-          <Button size="sm" onClick={() => startLogin()} className="bg-[#a56b37] text-white shadow-sm hover:bg-[#8d592c]">
-            دخول الباحث
-          </Button>
-        )}
-      </div>
+	      </div>
     </header>
   );
 }
