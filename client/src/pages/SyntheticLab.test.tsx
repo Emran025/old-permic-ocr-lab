@@ -16,6 +16,8 @@ describe("SyntheticLab page", () => {
     expect(markup).toContain("شاهد صور كل مرحلة داخل المختبر");
     expect(markup).toContain("الصورة السابقة في");
     expect(markup).toContain("الصورة التالية في");
+    expect(markup).toContain("grid gap-6 md:grid-cols-2");
+    expect(markup).not.toContain("2xl:grid-cols-4");
     expect(markup).toContain("غير مضمنة");
     expect(markup).toContain("الانتقال إلى البيانات الحقيقية");
   });
