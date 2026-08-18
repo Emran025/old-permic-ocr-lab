@@ -8,6 +8,7 @@ describe("synthetic Old Permic pipeline", () => {
     expect(syntheticStages.slice(0, 2).every((stage) => stage.layout === "isolated-glyph")).toBe(true);
     expect(syntheticStages.at(2)).toMatchObject({ layout: "ordered-lines" });
     expect(syntheticStages.at(3)).toMatchObject({ layout: "structured-pages" });
+    expect(syntheticStages.slice(0, 4).every((stage) => stage.galleryUrls?.length === 6)).toBe(true);
     expect(syntheticStages.at(-1)).toMatchObject({ id: "real-data-adaptation", status: "gated" });
     expect(syntheticPipelineBoundary).toContain("حرف مفرد");
   });

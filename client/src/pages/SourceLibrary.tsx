@@ -4,8 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { contextualSources, externalPrimarySources, primaryCorpusSummary, primaryTextSources, type CorpusDisplaySource } from "@/data/primarySourceGallery";
-import { syntheticTrainingGallery, syntheticTrainingSummary } from "@/data/syntheticTrainingGallery";
-import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FileSearch, Images, Landmark, Layers3, ScanText, ShieldCheck, ZoomIn } from "lucide-react";
+import { AlertTriangle, ExternalLink, FileSearch, Images, Landmark, ScanText, ShieldCheck, ZoomIn } from "lucide-react";
 
 function PrimaryImageDialog({ item }: { item: CorpusDisplaySource }) {
   return (
@@ -30,36 +29,6 @@ function PrimaryImageDialog({ item }: { item: CorpusDisplaySource }) {
   );
 }
 
-function SyntheticTrainingGallery() {
-  const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
-  const activeItem = activeIndex === null ? null : syntheticTrainingGallery[activeIndex];
-  const changeIndex = (direction: -1 | 1) => setActiveIndex((index) => (index === null ? 0 : (index + direction + syntheticTrainingGallery.length) % syntheticTrainingGallery.length));
-
-  React.useEffect(() => {
-    if (activeIndex === null) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowRight") changeIndex(-1);
-      if (event.key === "ArrowLeft") changeIndex(1);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeIndex]);
-
-  return (
-    <section className="mt-14 rounded-3xl border border-[#b8c7ba] bg-[#eef4ec] p-7 sm:p-9">
-      <div className="flex flex-col gap-6 border-b border-[#ccdbcc] pb-7 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-start gap-4"><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#2b4b40] text-[#f4ead4]"><Layers3 className="size-5" /></span><div><p className="text-xs font-semibold tracking-[0.16em] text-[#55705c]">SYNTHETIC TRAINING DATA · EXCLUDED FROM PRIMARY CORPUS</p><h2 className="mt-2 text-2xl font-semibold text-[#294338]">بيانات التدريب الصناعية القابلة للتصفح</h2><p className="mt-3 max-w-3xl text-sm leading-7 text-[#5e6e61]">هذه الدفعة منشأة من خط Noto Sans Old Permic لتدريب كاشف الحرف، وليست صورًا تاريخية ولا كلمات مفترضة. تعرض المكتبة معاينة واحدة من كل فئة، وتبقى بقية الصور في حزمة التدريب الموثقة.</p></div></div>
-        <div className="grid grid-cols-3 divide-x divide-x-reverse divide-[#cdd9cb] rounded-2xl border border-[#c6d5c5] bg-[#f9fcf8] text-center"><div className="px-4 py-3"><p className="text-xl font-semibold text-[#2b4b40]">{syntheticTrainingSummary.classes}</p><p className="text-[10px] leading-5 text-[#607060]">فئة حرف</p></div><div className="px-4 py-3"><p className="text-xl font-semibold text-[#2b4b40]">{syntheticTrainingSummary.totalImages.toLocaleString("en-US")}</p><p className="text-[10px] leading-5 text-[#607060]">صورة مولدة</p></div><div className="px-4 py-3"><p className="text-xl font-semibold text-[#2b4b40]">{syntheticTrainingSummary.instancesPerClass.train}</p><p className="text-[10px] leading-5 text-[#607060]">لكل فئة في train</p></div></div>
-      </div>
-      <p className="mt-6 rounded-2xl border border-[#d0dccf] bg-[#f8fbf7] px-4 py-3 text-xs leading-6 text-[#5f6b5f]"><ShieldCheck className="ml-1 inline size-3.5 text-[#48704e]" />{syntheticTrainingSummary.trainingBoundary} استخدم الأسهم داخل العارض أو مفاتيح ← و→ للتنقل بين الصور.</p>
-      <div className="mt-7 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-        {syntheticTrainingGallery.map((item, index) => <button key={item.id} type="button" onClick={() => setActiveIndex(index)} className="group overflow-hidden rounded-2xl border border-[#d3ded1] bg-white text-right shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[#8ba48e] hover:shadow-[0_10px_24px_rgba(51,78,54,0.12)]" aria-label={`فتح الصورة الصناعية للفئة ${item.classId}`}><div className="relative aspect-square bg-[#f8f5ef]"><img src={item.imageUrl} alt={`حرف برمي صناعي ${item.glyph} للفئة ${item.classId}`} className="size-full object-contain transition duration-300 group-hover:scale-[1.04]" loading="lazy" /><span className="absolute left-2 top-2 rounded-full bg-[#2b4b40] px-2 py-1 text-[10px] font-semibold text-[#fffdf7]">id {item.classId}</span></div><div className="flex items-center justify-between gap-2 border-t border-[#ecf0e9] px-3 py-2"><span className="font-serif text-2xl text-[#284236]">{item.glyph}</span><span className="text-[10px] font-medium text-[#68756a]">{item.codepoint}</span></div></button>)}
-      </div>
-      {activeItem && <Dialog open={activeIndex !== null} onOpenChange={(open) => !open && setActiveIndex(null)}><DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto border-[#c9d6c8] bg-[#fffdf8] p-0 sm:rounded-3xl" dir="rtl"><div className="grid lg:grid-cols-[1.35fr_0.8fr]"><div className="relative flex min-h-[52vh] items-center justify-center bg-[#1f2922] p-5"><img src={activeItem.imageUrl} alt={`حرف برمي صناعي ${activeItem.glyph}`} className="max-h-[70vh] w-full rounded-2xl bg-[#f8f5ef] object-contain" /><button type="button" onClick={() => changeIndex(-1)} aria-label="الصورة السابقة" className="absolute right-4 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-[#fffdf8]/95 text-[#2b4b40] shadow-lg transition hover:bg-white"><ChevronRight className="size-5" /></button><button type="button" onClick={() => changeIndex(1)} aria-label="الصورة التالية" className="absolute left-4 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-[#fffdf8]/95 text-[#2b4b40] shadow-lg transition hover:bg-white"><ChevronLeft className="size-5" /></button><p className="absolute bottom-4 rounded-full bg-black/55 px-3 py-1.5 text-xs font-medium text-white">{activeIndex! + 1} / {syntheticTrainingGallery.length}</p></div><div className="p-6 sm:p-8"><DialogHeader className="text-right"><p className="text-xs font-semibold tracking-[0.16em] text-[#59735d]">SYNTHETIC S0 · {syntheticTrainingSummary.release}</p><DialogTitle className="mt-3 flex items-center gap-3 font-serif text-4xl text-[#26382e]"><span>{activeItem.glyph}</span><span className="font-sans text-base font-medium text-[#6a756c]">class id {activeItem.classId}</span></DialogTitle><DialogDescription className="mt-3 text-sm leading-7 text-[#626f64]">صورة تدريب صناعية لحرف منفرد. هذه عينة مشاهدة من تقسيم التدريب، ولا تمثل كلمة أو وثيقة تاريخية.</DialogDescription></DialogHeader><dl className="mt-7 space-y-3 text-sm"><div className="rounded-2xl bg-[#edf4eb] p-4"><dt className="text-xs font-semibold text-[#4b6a51]">هوية الحرف</dt><dd className="mt-2 font-medium text-[#304f38]">{activeItem.codepoint} · {activeItem.unicodeName}</dd></div><div className="rounded-2xl bg-[#f5f0e6] p-4"><dt className="text-xs font-semibold text-[#81572e]">نسب التوليد</dt><dd className="mt-2 leading-7 text-[#675e52]">layout: {syntheticTrainingSummary.generatorLayout} · profile: {syntheticTrainingSummary.generatorProfile} · seed: {activeItem.seed}</dd></div><div className="rounded-2xl border border-[#d9e3d7] bg-[#fbfdf9] p-4"><dt className="text-xs font-semibold text-[#4b6a51]">توازن الدفعة</dt><dd className="mt-2 leading-7 text-[#667166]">{syntheticTrainingSummary.instancesPerClass.train} مثيلًا من هذه الفئة في train، و{syntheticTrainingSummary.instancesPerClass.validation} في val، و{syntheticTrainingSummary.instancesPerClass.test} في test.</dd></div></dl></div></div></DialogContent></Dialog>}
-    </section>
-  );
-}
-
 export default function SourceLibrary() {
   return (
     <div className="min-h-screen bg-[#f8f5ef] text-[#2b332b]" dir="rtl">
@@ -68,8 +37,6 @@ export default function SourceLibrary() {
         <header className="grid gap-8 border-b border-[#ddd4c6] pb-10 lg:grid-cols-[1fr_0.7fr] lg:items-end"><div><p className="text-xs font-semibold tracking-[0.18em] text-[#a56b37]">PRIMARY OLD PERMIC TEXT CORPUS</p><h1 className="mt-3 font-serif text-4xl tracking-tight text-[#24372e] sm:text-5xl">مدوّنة النصوص الأصلية</h1><p className="mt-5 max-w-3xl text-sm leading-8 text-[#62675e]">هذه الصفحة مخصصة للصور التي يظهر فيها نص مكتوب بالبرمية القديمة بالفعل: نقوش أو حواشٍ مخطوطية أو وثائق. لا تعرض جداول الأبجدية أو طبعات الشرح بوصفها بيانات تدريب.</p></div><div className="rounded-3xl border border-[#e5d7bf] bg-[#fff9ee] p-6"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-[#efd7b1] text-[#7f5429]"><Images className="size-5" /></span><div><p className="text-2xl font-semibold text-[#2b4b40]">{primaryCorpusSummary.totalCount}</p><p className="text-xs text-[#756a5c]">مسارات إلى نصوص أصلية موثقة</p></div></div><p className="mt-4 text-xs leading-6 text-[#776854]">{primaryCorpusSummary.hostedCount} صور أولية حرة معروضة هنا، و{primaryCorpusSummary.externalCount} مسارات تفتح فوتوكوبيات مخطوطات أصلية في مصادرها الناشرة لحين تحقق حقوق إعادة الاستضافة.</p></div></header>
 
 	        <section className="mt-10"><div className="mb-6 flex items-center gap-3"><ScanText className="size-5 text-[#a56b37]" /><div><p className="text-xs font-semibold tracking-[0.14em] text-[#a56b37]">HOSTED PRIMARY TEXTS</p><h2 className="mt-1 text-2xl font-semibold">نصوص برمية قديمة ظاهرة داخل التطبيق</h2></div></div><div className="grid gap-6 lg:grid-cols-2">{primaryTextSources.map((item) => <PrimaryImageDialog item={item} key={item.id} />)}</div></section>
-
-	        <SyntheticTrainingGallery />
 
         <section className="mt-14 rounded-3xl border border-[#d9d1c3] bg-[#f4f1ea] p-7 sm:p-9"><div className="flex items-start gap-4"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-[#e7ddd0] text-[#765a39]"><Landmark className="size-5" /></span><div><p className="text-xs font-semibold tracking-[0.16em] text-[#8c6739]">CONTEXTUAL SOURCES · EXCLUDED FROM CORPUS</p><h2 className="mt-2 text-2xl font-semibold">مصادر سياقية خارج corpus النصوص</h2><p className="mt-3 max-w-3xl text-sm leading-7 text-[#666b62]">هذه الصور توثق الوعاء التاريخي للنقش، لكنها لا تُحتسب ضمن corpus النصوص أو ضمن عينات التدريب لأن النص ليس موضع العرض المباشر فيها.</p></div></div><div className="mt-7 grid gap-5 sm:max-w-md">{contextualSources.map((item) => <PrimaryImageDialog item={item} key={item.id} />)}</div></section>
 

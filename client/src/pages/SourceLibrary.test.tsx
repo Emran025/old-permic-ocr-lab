@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { externalPrimarySources, hostedPrimarySources, primaryCorpusSummary } from "@/data/primarySourceGallery";
-import { syntheticTrainingGallery, syntheticTrainingSummary } from "@/data/syntheticTrainingGallery";
 import SourceLibrary from "./SourceLibrary";
 
 vi.mock("@/components/ResearchHeader", () => ({ default: () => <header>التنقل</header> }));
@@ -25,10 +24,8 @@ describe("SourceLibrary page smoke test", () => {
     expect(markup).toContain("الحقوق والتدريب");
     expect(markup).toContain("فوتوكوبيات مخطوطات أصلية");
     expect(markup).toContain(primaryCorpusSummary.trainingBoundary);
-    expect(markup).toContain("بيانات التدريب الصناعية القابلة للتصفح");
-    expect(markup).toContain(syntheticTrainingSummary.trainingBoundary);
+    expect(markup).not.toContain("بيانات التدريب الصناعية القابلة للتصفح");
     hostedPrimarySources.forEach((source) => expect(markup).toContain(source.title));
     externalPrimarySources.forEach((source) => expect(markup).toContain(source.title));
-    syntheticTrainingGallery.forEach((source) => expect(markup).toContain(source.codepoint));
   });
 });
