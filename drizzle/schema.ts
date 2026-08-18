@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -22,7 +22,25 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const analyses = mysqlTable("analyses", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  originalFilename: varchar("originalFilename", { length: 255 }).notNull(),
+  imageKey: varchar("imageKey", { length: 512 }).notNull(),
+  imageUrl: text("imageUrl").notNull(),
+  mimeType: varchar("mimeType", { length: 128 }).notNull(),
+  status: mysqlEnum("status", ["pending", "model_not_configured", "completed", "failed"])
+    .notNull()
+    .default("pending"),
+  extractedText: text("extractedText"),
+  detections: json("detections").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+export type Analysis = typeof analyses.$inferSelect;
+export type InsertAnalysis = typeof analyses.$inferInsert;
 
 // TODO: Add your tables here

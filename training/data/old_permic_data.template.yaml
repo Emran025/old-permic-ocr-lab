@@ -1,0 +1,8 @@
+# انسخ هذا الملف إلى data.yaml بعد تحضير الصور والوسوم.
+# المعرّفات في ملفات labels يجب أن تطابق ترتيب classes في class_map.json تمامًا.
+path: /content/old_permic_yolo/dataset
+train: images/train
+val: images/val
+test: images/test
+nc: REPLACE_WITH_CLASS_COUNT
+names: REPLACE_WITH_ORDERED_CLASS_LABELS

@@ -175,3 +175,23 @@
     }
   }
 }
+@theme inline {
+  --font-sans: "Noto Kufi Arabic", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", "Noto Kufi Arabic", serif;
+  --font-old-permic: "Noto Sans Old Permic", sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    margin: 0;
+    background: #f8f5ef;
+    color: #2b332b;
+    font-family: "Noto Kufi Arabic", ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+.font-old-permic { font-family: "Noto Sans Old Permic", sans-serif; }
+.font-serif { font-family: "Playfair Display", "Noto Kufi Arabic", serif; }
