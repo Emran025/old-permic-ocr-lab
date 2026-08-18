@@ -1,6 +1,7 @@
 import ResearchHeader from "@/components/ResearchHeader";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Boxes, ClipboardCheck, FileCode2, Layers3, Sparkles } from "lucide-react";
+import { Link } from "wouter";
 
 const stages = [
   { icon: BookOpen, title: "تحديد المصدر", body: "سجّل المؤسسة الحافظة ورقم الحفظ وحقوق الصورة لكل قطعة. افصل التصوير الفوتوغرافي عن النسخ أو الرسوم التاريخية في بياناتك." },
@@ -17,7 +18,7 @@ export default function Documentation() {
         <div className="max-w-3xl">
           <p className="text-xs font-semibold tracking-[0.18em] text-[#a56b37]">METHODS & DATA</p>
           <h1 className="mt-2 font-serif text-4xl tracking-tight text-[#24372e]">وثائق البرمية القديمة</h1>
-          <p className="mt-5 text-base leading-8 text-[#5f655b]">تشرح هذه الصفحة بنية العمل المعتمدة في المشروع: كشف مناطق الكتابة أولًا، ثم قراءة الفئات وفق خريطة موثقة. ليست بديلًا عن مراجعة الباحث للنقش أو القراءة التاريخية.</p>
+          <p className="mt-5 text-base leading-8 text-[#5f655b]">تشرح هذه الصفحة بنية العمل المعتمدة في المشروع: بيانات Unicode صناعية قابلة للإعادة أولًا، ثم كشف مناطق الكتابة الحقيقية، ثم قراءة الفئات وفق خريطة موثقة. ليست بديلًا عن مراجعة الباحث للنقش أو القراءة التاريخية.</p>
         </div>
 
         <section className="mt-10 grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
@@ -33,6 +34,10 @@ export default function Documentation() {
             <p className="mt-3 text-sm leading-7 text-[#666b61]">يوفّر المشروع قالب class_map.json ولا يضع قائمة حروف ثابتة داخل كود التدريب. ثبات id مهم لأن تغيير ترتيب الفئات بعد إنشاء الوسوم يجعل وزن YOLO ونتائجه غير صالحين للمقارنة.</p>
             <pre dir="ltr" className="mt-5 overflow-x-auto rounded-2xl bg-[#252d27] p-4 text-xs leading-6 text-[#eff6e9]">{`{"classes": [{"id": 0, "label": "…", "unicode": "U+…"}]}`}</pre>
           </article>
+        </section>
+
+        <section className="mt-12 rounded-3xl border border-[#d7dfd0] bg-[#eef2e9] p-8">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold tracking-[0.15em] text-[#61775f]">SYNTHETIC-TO-REAL PROTOCOL</p><h2 className="mt-2 text-xl font-semibold text-[#294338]">ابدأ بالنظام قبل المخطوطة</h2><p className="mt-3 max-w-3xl text-sm leading-7 text-[#59655a]">ينتج المولد صفحات محارف Unicode مع مربعات YOLO وملف manifest مسجل للبذرة والخط والتشويه. بعد baseline نظيف، يرفع التشويه تدريجيًا. ولا ينتقل المشروع إلى corpus الحقيقي إلا بعد اعتماد الحقوق والقراءة والوسوم وتقسيم المخطوطات.</p></div><Link href="/synthetic" className="inline-flex shrink-0 items-center justify-center rounded-xl bg-[#2b4b40] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#213b32]">فتح مختبر البيانات الصناعية</Link></div>
         </section>
 
         <section className="mt-12">

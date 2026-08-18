@@ -1,12 +1,13 @@
 import { startLogin } from "@/const";
 import { Button } from "@/components/ui/button";
-import { BookOpen, History, Images, ScanSearch, Sparkles } from "lucide-react";
+import { BookOpen, History, Images, ScanSearch, Sparkles, Wand2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 const links = [
   { href: "/", label: "التحليل", icon: ScanSearch },
   { href: "/sources", label: "المصادر", icon: Images },
+  { href: "/synthetic", label: "الصناعي", icon: Wand2 },
   { href: "/history", label: "السجل", icon: History },
   { href: "/documentation", label: "الوثائق", icon: BookOpen },
 ];

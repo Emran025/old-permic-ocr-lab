@@ -8,6 +8,7 @@ import Documentation from "./pages/Documentation";
 import History from "./pages/History";
 import Home from "./pages/Home";
 import SourceLibrary from "./pages/SourceLibrary";
+import SyntheticLab from "./pages/SyntheticLab";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
@@ -15,6 +16,7 @@ function Router() {
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/sources"} component={SourceLibrary} />
+      <Route path={"/synthetic"} component={SyntheticLab} />
       <Route path={"/history"} component={History} />
       <Route path={"/documentation"} component={Documentation} />
       <Route path={"/404"} component={NotFound} />
