@@ -12,9 +12,9 @@ const notebook = {
     markdown(`
 # تدريب YOLO للبرمية القديمة
 
-هذا الدفتر هو تكييف مباشر لمسار YOLO السابق: يثبت البيئة، يربط Google Drive، يفك أرشيف البيانات محليًا، يتحقق من الوسوم، ينشئ ملف البيانات، يدرب أو يستأنف، يقيّم، ثم يفتح واجهة اختبار. تغيرت هنا فقط الأشياء المقيدة باللغة: خريطة الفئات، مسارات المشروع، ملف البيانات، والواجهة.
+هذا الدفتر هو تكييف مباشر لمسار YOLO السابق، مع مسار متدرج للبيانات: baseline صناعي من Unicode، ثم تشويه مضبوط، ثم بيانات مخطوطات حقيقية موسومة. يثبت البيئة، يربط Google Drive، يتحقق من الوسوم، ينشئ ملف البيانات، يدرب أو يستأنف، يقيّم، ثم يفتح واجهة اختبار.
 
-> لا يحتوي الدفتر بيانات أو أوزانًا للبرمية القديمة. لا تشغل التدريب قبل إدخال صور حقيقية مرفقة بوسوم مراجَعة وخريطة فئات معتمدة.`),
+> يمكن تشغيل baseline صناعي لتدقيق بنية الكاشف، لكنه لا يثبت أداءً على الخط التاريخي. لا تدّعِ صلاحية OCR للمخطوطات قبل إدخال صور حقيقية مرفقة بوسوم مراجَعة وخريطة فئات معتمدة.`),
     code(`
 # 1) تثبيت المكتبات والتحقق من بيئة التدريب.
 !pip install -q ultralytics gradio pyyaml
@@ -35,9 +35,9 @@ assert torch.cuda.is_available(), (
 )
 `),
     markdown(`
-## الخطوة 2: ربط البيانات
+## الخطوة 2: اختيار خط البيانات
 
-حمّل إلى Google Drive أرشيفًا واحدًا بالهيكل الموضح في README. تُفك الصور داخل بيئة Colab المحلية لتجنب القراءة المستمرة من Drive، بينما تبقى نقاط الاستئناف في Drive.`),
+ابدأ بـ «synthetic_unicode» للتحقق من بنية YOLO على محارف Unicode، ثم بدّل إلى «real_labeled» فقط عند توفر صور مخطوطات ذات حقوق وقراءات ووسوم معتمدة. انسخ المولد والخط إلى Drive قبل تشغيل المرحلة الصناعية.`),
     code(`
 from google.colab import drive
 from pathlib import Path
@@ -50,27 +50,39 @@ DRIVE_EXPORT_DIR = DRIVE_PROJECT_ROOT / 'dataset_exports'
 DRIVE_TRAINING_STATE_DIR = DRIVE_PROJECT_ROOT / 'training_state'
 DRIVE_TRAINING_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
-# اترك القيمة None عند وجود أرشيف واحد فقط في dataset_exports.
+DATA_MODE = 'synthetic_unicode'  # synthetic_unicode أو real_labeled
+SYNTHETIC_PROFILE = 'unicode-clean'  # ثم controlled-deformation ثم manuscript-inspired
+SYNTHETIC_SAMPLES = 240
+SYNTHETIC_SEED = 10350
+SYNTHETIC_SCRIPT = DRIVE_PROJECT_ROOT / 'code' / 'generate_old_permic_synthetic.py'
+SYNTHETIC_FONT = DRIVE_PROJECT_ROOT / 'assets' / 'NotoSansOldPermic-Regular.ttf'
+
+# اترك القيمة None عند وجود أرشيف واحد فقط في dataset_exports. تستخدم فقط في real_labeled.
 ARCHIVE_NAME = None
 LOCAL_ROOT = Path('/content/old_permic_yolo')
 LOCAL_ROOT.mkdir(parents=True, exist_ok=True)
-YOLO_DATASET_ROOT = LOCAL_ROOT / 'dataset'
-
-assert DRIVE_EXPORT_DIR.is_dir(), f'مجلد التصدير غير موجود: {DRIVE_EXPORT_DIR}'
-archives = sorted(p for p in DRIVE_EXPORT_DIR.glob('*.zip') if p.is_file())
-assert archives, f'لا يوجد أرشيف ZIP في: {DRIVE_EXPORT_DIR}'
-if ARCHIVE_NAME is None:
-    assert len(archives) == 1, 'يوجد أكثر من أرشيف؛ عيّن ARCHIVE_NAME صراحةً.'
-    DRIVE_ARCHIVE = archives[0]
+if DATA_MODE == 'synthetic_unicode':
+    assert SYNTHETIC_SCRIPT.is_file(), f'انسخ مولد البيانات إلى: {SYNTHETIC_SCRIPT}'
+    assert SYNTHETIC_FONT.is_file(), f'انسخ خط البرمية القديمة إلى: {SYNTHETIC_FONT}'
+    YOLO_DATASET_ROOT = LOCAL_ROOT / f'synthetic_{SYNTHETIC_PROFILE}'
+    print('المسار: بيانات صناعية فقط؛ لا تدخل صور المخطوطات في هذه المرحلة.')
 else:
-    DRIVE_ARCHIVE = DRIVE_EXPORT_DIR / ARCHIVE_NAME
-    assert DRIVE_ARCHIVE.is_file(), f'الأرشيف المحدد غير موجود: {DRIVE_ARCHIVE}'
-
-print('الأرشيف المختار:', DRIVE_ARCHIVE)
-print('الحجم بالبايت:', DRIVE_ARCHIVE.stat().st_size)
+    assert DATA_MODE == 'real_labeled', 'اختر synthetic_unicode أو real_labeled فقط.'
+    assert DRIVE_EXPORT_DIR.is_dir(), f'مجلد التصدير غير موجود: {DRIVE_EXPORT_DIR}'
+    archives = sorted(p for p in DRIVE_EXPORT_DIR.glob('*.zip') if p.is_file())
+    assert archives, f'لا يوجد أرشيف ZIP في: {DRIVE_EXPORT_DIR}'
+    if ARCHIVE_NAME is None:
+        assert len(archives) == 1, 'يوجد أكثر من أرشيف؛ عيّن ARCHIVE_NAME صراحةً.'
+        DRIVE_ARCHIVE = archives[0]
+    else:
+        DRIVE_ARCHIVE = DRIVE_EXPORT_DIR / ARCHIVE_NAME
+        assert DRIVE_ARCHIVE.is_file(), f'الأرشيف المحدد غير موجود: {DRIVE_ARCHIVE}'
+    YOLO_DATASET_ROOT = LOCAL_ROOT / 'dataset'
+    print('الأرشيف المختار:', DRIVE_ARCHIVE)
+    print('الحجم بالبايت:', DRIVE_ARCHIVE.stat().st_size)
 `),
     code(`
-# 3) فك الأرشيف بأمان والتحقق من بنيته.
+# 3) توليد بيانات Unicode صناعية أو فك أرشيف حقيقي بأمان، ثم التحقق من البنية.
 def safe_extract(zip_path, destination):
     destination = destination.resolve()
     with zipfile.ZipFile(zip_path) as zf:
@@ -79,10 +91,18 @@ def safe_extract(zip_path, destination):
             assert str(target).startswith(str(destination)), f'مسار غير آمن في ZIP: {member.filename}'
         zf.extractall(destination)
 
-if YOLO_DATASET_ROOT.exists():
-    shutil.rmtree(YOLO_DATASET_ROOT)
-YOLO_DATASET_ROOT.mkdir(parents=True)
-safe_extract(DRIVE_ARCHIVE, YOLO_DATASET_ROOT)
+if DATA_MODE == 'synthetic_unicode':
+    import subprocess
+    subprocess.run([
+        sys.executable, str(SYNTHETIC_SCRIPT), '--output', str(YOLO_DATASET_ROOT),
+        '--profile', SYNTHETIC_PROFILE, '--samples', str(SYNTHETIC_SAMPLES),
+        '--seed', str(SYNTHETIC_SEED), '--font', str(SYNTHETIC_FONT),
+    ], check=True)
+else:
+    if YOLO_DATASET_ROOT.exists():
+        shutil.rmtree(YOLO_DATASET_ROOT)
+    YOLO_DATASET_ROOT.mkdir(parents=True)
+    safe_extract(DRIVE_ARCHIVE, YOLO_DATASET_ROOT)
 
 # يسمح الدفتر بأرشيف يضم مجلدًا علويًا واحدًا أو محتوى البيانات مباشرة.
 children = [p for p in YOLO_DATASET_ROOT.iterdir()]
