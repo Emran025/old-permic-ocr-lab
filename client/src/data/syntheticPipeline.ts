@@ -2,6 +2,7 @@ export type SyntheticStage = {
   id: string;
   title: string;
   goal: string;
+  layout: "isolated-glyph" | "ordered-lines" | "structured-pages" | "gated";
   profile: string;
   controls: string[];
   gate: string;
@@ -12,42 +13,58 @@ export type SyntheticStage = {
 
 export const syntheticStages: SyntheticStage[] = [
   {
-    id: "unicode-clean",
-    title: "Unicode نظيف",
-    goal: "التحقق من خريطة الفئات وصيغة YOLO والرسم بالخط الداعم للبرمية القديمة.",
+    id: "s0-unicode-clean",
+    title: "S0 · حرف مفرد نظيف",
+    goal: "إنشاء مثيل بصري واحد لحرف برمي واحد في كل صورة للتحقق من خريطة الفئات ووسم YOLO الحرفي.",
+    layout: "isolated-glyph",
     profile: "unicode-clean",
-    controls: ["بذرة ثابتة", "Noto Sans Old Permic", "خلفية موحدة", "مربعات حرفية تلقائية"],
-    gate: "ينجح الفحص المرئي والاختبار المصغر قبل أي تدريب baseline.",
+    controls: ["حرف واحد لكل صورة", "بذرة ثابتة", "Noto Sans Old Permic", "مربع YOLO واحد"],
+    gate: "ينجح الفحص المرئي وتظهر الفئات الـ38 في كل تقسيم قبل أي تدريب baseline.",
     status: "ready",
-    previewUrl: "/manus-storage/unicode-clean_9e57de84.png",
-    previewRun: { samples: 12, seed: 10350 },
+    previewUrl: "/manus-storage/old-permic-s0-isolated-glyph-preview_bc66411c.png",
+    previewRun: { samples: 6, seed: 10350 },
   },
   {
-    id: "controlled-deformation",
-    title: "تشويه صناعي مضبوط",
-    goal: "تعليم النموذج متانة أولية من دون إخفاء مصدر كل تغير.",
+    id: "s0-controlled-deformation",
+    title: "S0 · حرف مفرد مشوّه بضبط",
+    goal: "تعليم الكاشف متانة أولية للحرف الواحد من دون إخفاء مصدر أي تغيير بصري.",
+    layout: "isolated-glyph",
     profile: "controlled-deformation",
-    controls: ["تدوير حرفي محدود", "اهتزاز حبر", "ضباب خفيف", "ضجيج ببذرة قابلة للإعادة"],
+    controls: ["حرف واحد لكل صورة", "تدوير حرفي محدود", "اهتزاز حبر", "ضجيج ببذرة قابلة للإعادة"],
     gate: "تسجل كل تجربة profile والبذرة والمعلمات في manifest مستقل.",
     status: "ready",
-    previewUrl: "/manus-storage/controlled-deformation_6788cee9.png",
+    previewUrl: "/manus-storage/old-permic-s0-controlled-preview_eb425574.png",
     previewRun: { samples: 6, seed: 20350 },
   },
   {
-    id: "manuscript-inspired",
-    title: "تقريب مخطوطي محدود",
-    goal: "تقليص فجوة المجال قبل إدخال صور حقيقية، لا تقليدها أو استبدالها.",
+    id: "s1-ordered-lines",
+    title: "S1 · أسطر حروف منظمة",
+    goal: "ترتيب حروف متعددة على أسطر بصرية مع وسوم منفصلة لكل حرف؛ لا تفترض هذه المرحلة كلمات أو معجمًا.",
+    layout: "ordered-lines",
     profile: "manuscript-inspired",
-    controls: ["لون ورق", "ضجيج أعلى", "ضباب مضبوط", "تباعد سطور متغير"],
-    gate: "لا ينتقل إلى التدريب الفعلي إلا بعد مقارنة ببيانات حقيقية موسومة ومقسمة مستقلًا.",
+    controls: ["ترتيب بصري لا لغوي", "لون ورق", "ضجيج أعلى", "تباعد سطور متغير"],
+    gate: "تراجع كثافة الحروف والتفاف السطر قبل الانتقال إلى صفحات صناعية منظمة S2.",
     status: "ready",
-    previewUrl: "/manus-storage/manuscript-inspired_55ffd65c.png",
+    previewUrl: "/manus-storage/old-permic-s1-lines-preview_53a3a118.png",
     previewRun: { samples: 6, seed: 30350 },
+  },
+  {
+    id: "s2-structured-pages",
+    title: "S2 · صفحات صناعية منظمة",
+    goal: "تركيب أسطر حروف داخل مناطق صفحة ذات عمود واحد أو عمودين، مع مربع YOLO مستقل لكل حرف وسجل للصفحة والسطر وترتيب القراءة.",
+    layout: "structured-pages",
+    profile: "manuscript-inspired",
+    controls: ["صفحة أحادية/متعددة الأعمدة", "ترتيب قراءة مسجل", "مربعات حرفية مستقلة", "lineage للصفحة والسطر"],
+    gate: "تتطابق صور الصفحة ووسومها وسجل النسب حرفيًا عند إعادة التوليد بالبذرة نفسها.",
+    status: "ready",
+    previewUrl: "/manus-storage/old-permic-s2-structured-page-preview_1d9ce770.png",
+    previewRun: { samples: 6, seed: 40350 },
   },
   {
     id: "real-data-adaptation",
     title: "تكييف على مخطوطات حقيقية",
     goal: "دمج قصاصات برمية حقيقية بعد الإذن والقراءة والوسم المتحقق منه.",
+    layout: "gated",
     profile: "gated",
     controls: ["حقوق متحققة", "قراءة مرجعية", "مربعات معتمدة", "تقسيم حسب المصدر"],
     gate: "يتطلب corpus حقيقيًا موسومًا؛ لا ينفذ تلقائيًا داخل المختبر.",
@@ -55,11 +72,12 @@ export const syntheticStages: SyntheticStage[] = [
   },
 ];
 
-export const syntheticPipelineBoundary = "الصور الصناعية تختبر بنية النموذج ولا تمثل شكل الخط التاريخي؛ تبقى صلاحية النموذج النهائية مرهونة ببيانات برمية قديمة حقيقية وموسومة.";
+export const syntheticPipelineBoundary = "الصور الصناعية تدرب كاشف الحروف من الخط: S0 لحرف مفرد، ثم S1 للأسطر المنظمة، ثم S2 للصفحات المنظمة. لا تمثل هذه المرحلة كلمات أو خطًا تاريخيًا؛ تبقى صلاحية OCR النهائية مرهونة ببيانات برمية قديمة حقيقية وموسومة.";
 
 export const syntheticUnicodeFacts = {
   assignedClassCount: 38,
   font: "Noto Sans Old Permic",
   generatorPath: "training/synthetic/generate_old_permic_synthetic.py",
+  initialLayout: "isolated-glyph",
   labelFormat: "YOLO: class_id center_x center_y width height",
 } as const;
