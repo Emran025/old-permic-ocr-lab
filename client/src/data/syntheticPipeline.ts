@@ -9,6 +9,7 @@ export type SyntheticStage = {
   status: "ready" | "gated";
   previewUrl?: string;
   previewRun?: { samples: number; seed: number };
+  galleryUrls?: string[];
 };
 
 export const syntheticStages: SyntheticStage[] = [
@@ -23,6 +24,7 @@ export const syntheticStages: SyntheticStage[] = [
     status: "ready",
     previewUrl: "/manus-storage/old-permic-s0-isolated-glyph-preview_bc66411c.png",
     previewRun: { samples: 6, seed: 10350 },
+    galleryUrls: ["/manus-storage/s0-v1-class-00_83f6c8a7.png", "/manus-storage/s0-v1-class-01_608dda91.png", "/manus-storage/s0-v1-class-02_fa14cb52.png", "/manus-storage/s0-v1-class-03_0dc327e9.png", "/manus-storage/s0-v1-class-04_8cb1c5b4.png", "/manus-storage/s0-v1-class-05_73be1afe.png"],
   },
   {
     id: "s0-controlled-deformation",
@@ -35,6 +37,7 @@ export const syntheticStages: SyntheticStage[] = [
     status: "ready",
     previewUrl: "/manus-storage/old-permic-s0-controlled-preview_eb425574.png",
     previewRun: { samples: 6, seed: 20350 },
+    galleryUrls: ["/manus-storage/s0-controlled-00_583bc856.png", "/manus-storage/s0-controlled-01_93105928.png", "/manus-storage/s0-controlled-02_7ce8390a.png", "/manus-storage/s0-controlled-03_fc54e57a.png", "/manus-storage/s0-controlled-04_46fcacde.png", "/manus-storage/s0-controlled-05_547c80fb.png"],
   },
   {
     id: "s1-ordered-lines",
@@ -47,6 +50,7 @@ export const syntheticStages: SyntheticStage[] = [
     status: "ready",
     previewUrl: "/manus-storage/old-permic-s1-lines-preview_53a3a118.png",
     previewRun: { samples: 6, seed: 30350 },
+    galleryUrls: ["/manus-storage/s1-lines-00_512b8f15.png", "/manus-storage/s1-lines-01_65b6b1d2.png", "/manus-storage/s1-lines-02_98dc67f3.png", "/manus-storage/s1-lines-03_db3dc4ee.png", "/manus-storage/s1-lines-04_75da2c13.png", "/manus-storage/s1-lines-05_30bf36ac.png"],
   },
   {
     id: "s2-structured-pages",
@@ -59,6 +63,7 @@ export const syntheticStages: SyntheticStage[] = [
     status: "ready",
     previewUrl: "/manus-storage/old-permic-s2-structured-page-preview_1d9ce770.png",
     previewRun: { samples: 6, seed: 40350 },
+    galleryUrls: ["/manus-storage/s2-pages-00_1c89f436.png", "/manus-storage/s2-pages-01_b9ded7c3.png", "/manus-storage/s2-pages-02_c01cded3.png", "/manus-storage/s2-pages-03_8dc40335.png", "/manus-storage/s2-pages-04_e01cbca6.png", "/manus-storage/s2-pages-05_110aadc8.png"],
   },
   {
     id: "real-data-adaptation",
