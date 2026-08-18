@@ -25,6 +25,8 @@ describe("SourceLibrary page smoke test", () => {
     expect(markup).toContain("فوتوكوبيات مخطوطات أصلية");
     expect(markup).toContain(primaryCorpusSummary.trainingBoundary);
     expect(markup).not.toContain("بيانات التدريب الصناعية القابلة للتصفح");
+    expect(markup).toContain("grid items-start gap-6 lg:grid-cols-2");
+    expect(markup).not.toContain("group block h-full w-full");
     hostedPrimarySources.forEach((source) => expect(markup).toContain(source.title));
     externalPrimarySources.forEach((source) => expect(markup).toContain(source.title));
   });
