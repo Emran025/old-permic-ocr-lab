@@ -5,7 +5,7 @@ import { ExternalLink, FileCode2, NotebookTabs, RefreshCw } from "lucide-react";
 
 const notebookPath = "training/notebooks/old_permic_synthetic_generation.ipynb";
 const githubNotebookUrl = `https://github.com/Emran025/old-permic-ocr-lab/blob/main/${notebookPath}`;
-const renderedNotebookUrl = "/manus-storage/old-permic-synthetic-generation-notebook_0ed3fba6.html";
+const renderedNotebookUrl = "/manus-storage/old-permic-synthetic-generation-notebook_d1303168.html";
 
 export default function GeneratorNotebook() {
   const [refreshKey, setRefreshKey] = React.useState(0);

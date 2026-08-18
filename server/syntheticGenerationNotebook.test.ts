@@ -11,5 +11,7 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("layout='isolated-glyph'");
     expect(code).toContain("layout='ordered-lines'");
     expect(code).toContain("layout='structured-pages'");
+    expect(code).toContain("from ultralytics import YOLO");
+    expect(code).toContain("evaluation_model.val");
   });
 });
