@@ -94,13 +94,13 @@ def normalized_box(x: int, y: int, width: int, height: int, image_size: int) -> 
 
 
 def render_isolated_glyph_sample(
-    characters: list[dict[str, str]], profile: Profile, seed: int, image_size: int, font_size: int, font_path: Path
+    characters: list[dict[str, str]], profile: Profile, seed: int, image_size: int, font_size: int, font_path: Path, class_id_override: int | None = None
 ) -> tuple[Image.Image, list[tuple[int, float, float, float, float]], list[str], dict[str, object]]:
     """Render exactly one labelled character asset (S0)."""
     rng = random.Random(seed)
     image = Image.new("RGB", (image_size, image_size), profile.background)
     font = ImageFont.truetype(str(font_path), font_size)
-    class_id = rng.randrange(len(characters))
+    class_id = rng.randrange(len(characters)) if class_id_override is None else class_id_override
     glyph = characters[class_id]["glyph"]
     patch = glyph_patch(glyph, font, profile, rng)
     x = rng.randint(24, max(24, image_size - patch.width - 24))
@@ -232,10 +232,10 @@ def render_structured_page_sample(
 
 
 def render_sample(
-    layout: str, characters: list[dict[str, str]], profile: Profile, seed: int, image_size: int, font_size: int, font_path: Path
+    layout: str, characters: list[dict[str, str]], profile: Profile, seed: int, image_size: int, font_size: int, font_path: Path, class_id_override: int | None = None
 ) -> tuple[Image.Image, list[tuple[int, float, float, float, float]], list[str], dict[str, object]]:
     if layout == "isolated-glyph":
-        return render_isolated_glyph_sample(characters, profile, seed, image_size, font_size, font_path)
+        return render_isolated_glyph_sample(characters, profile, seed, image_size, font_size, font_path, class_id_override)
     if layout == "ordered-lines":
         return render_ordered_line_sample(characters, profile, seed, image_size, font_size, font_path)
     if layout == "structured-pages":
@@ -252,10 +252,13 @@ def write_dataset(
     font_size: int,
     font_path: Path,
     layout: str,
+    balanced_classes: bool = False,
 ) -> dict[str, object]:
     if not font_path.exists():
         raise FileNotFoundError(f"Required font is missing: {font_path}")
     characters = old_permic_characters()
+    if balanced_classes and layout != "isolated-glyph":
+        raise ValueError("--balanced-classes is available only for isolated-glyph S0 assets.")
     if output_dir.exists():
         shutil.rmtree(output_dir)
     split_names = ("train", "val", "test")
@@ -276,11 +279,16 @@ def write_dataset(
         return "test"
 
     asset_records: list[dict[str, object]] = []
+    split_class_positions = {split: 0 for split in split_names}
     for index in range(samples):
         sample_seed = seed + index
-        image, labels, sequence, geometry = render_sample(layout, characters, profile, sample_seed, image_size, font_size, font_path)
-        stem = f"old_permic_{layout}_{profile.name}_{index:05d}"
         split = split_for(index)
+        class_id_override = None
+        if balanced_classes:
+            class_id_override = split_class_positions[split] % len(characters)
+            split_class_positions[split] += 1
+        image, labels, sequence, geometry = render_sample(layout, characters, profile, sample_seed, image_size, font_size, font_path, class_id_override)
+        stem = f"old_permic_{layout}_{profile.name}_{index:05d}"
         image.save(output_dir / "images" / split / f"{stem}.png")
         with (output_dir / "labels" / split / f"{stem}.txt").open("w", encoding="utf-8") as label_file:
             for class_id, center_x, center_y, width, height in labels:
@@ -321,6 +329,7 @@ def write_dataset(
         "font_sha256": sha256_file(font_path),
         "class_count": len(class_map),
         "split_counts": split_counts,
+        "class_balance_policy": "cyclic-per-split" if balanced_classes else "random",
         "lineage_manifest": "assets.jsonl",
         "real_manuscripts_included": False,
         "notes": "Synthetic character-detection data from a font. It contains no historical manuscript pixels and does not prove palaeographic OCR performance.",
@@ -335,6 +344,7 @@ def main() -> None:
     parser.add_argument("--profile", choices=sorted(PROFILES), default="unicode-clean")
     parser.add_argument("--layout", choices=LAYOUTS, default="isolated-glyph", help="S0 character assets, S1 ordered lines, or S2 structured pages.")
     parser.add_argument("--samples", type=int, default=100)
+    parser.add_argument("--balanced-classes", action="store_true", help="Cycle the 38 classes independently inside each S0 split.")
     parser.add_argument("--seed", type=int, default=10350)
     parser.add_argument("--image-size", type=int, default=640)
     parser.add_argument("--font-size", type=int, default=58)
@@ -342,7 +352,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.samples < 1:
         raise ValueError("--samples must be at least 1")
-    manifest = write_dataset(args.output, PROFILES[args.profile], args.samples, args.seed, args.image_size, args.font_size, args.font, args.layout)
+    manifest = write_dataset(args.output, PROFILES[args.profile], args.samples, args.seed, args.image_size, args.font_size, args.font, args.layout, args.balanced_classes)
     print(json.dumps(manifest, ensure_ascii=False))
 
 

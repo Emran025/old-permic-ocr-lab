@@ -33,4 +33,19 @@ describe("synthetic Old Permic glyph assets", () => {
     expect(labels).toHaveLength(10);
     expect(labels.every((label) => label.split("\n").length === 1 && label.split(" ").length === 5)).toBe(true);
   });
+
+  it("cycles all 38 character classes inside every S0 split when balanced generation is requested", () => {
+    const root = mkdtempSync(join(tmpdir(), "old-permic-balanced-s0-"));
+    roots.push(root);
+    const generator = join(process.cwd(), "training", "synthetic", "generate_old_permic_synthetic.py");
+    const font = "/usr/share/fonts/truetype/noto/NotoSansOldPermic-Regular.ttf";
+    execFileSync("python3", [generator, "--output", root, "--samples", "380", "--seed", "10350", "--layout", "isolated-glyph", "--balanced-classes", "--font", font], { encoding: "utf8" });
+
+    const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+    expect(manifest.class_balance_policy).toBe("cyclic-per-split");
+    for (const split of ["train", "val", "test"]) {
+      const classIds = readdirSync(join(root, "labels", split)).map((name) => Number(readFileSync(join(root, "labels", split, name), "utf8").trim().split(" ")[0]));
+      expect(new Set(classIds).size).toBe(38);
+    }
+  });
 });
