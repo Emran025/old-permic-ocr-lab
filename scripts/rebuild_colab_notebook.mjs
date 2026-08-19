@@ -48,7 +48,8 @@ const cells = [
 
   code("environment-gpu", `
 # 1) بيئة Colab وفحص GPU إلزامي. لا تغيّر هذه الخلية إلى تدريب CPU.
-%pip install -q --upgrade "ultralytics>=8.3,<9" pyyaml matplotlib pillow
+# يثبت Pillow 11.3.0 بدل الترقية غير المقيدة لمنع اختلاط ملفات PIL الداخلية في جلسات Colab الحديثة.
+%pip install -q --upgrade "ultralytics>=8.3,<9" pyyaml matplotlib "Pillow==11.3.0"
 
 import sys
 import subprocess
@@ -56,10 +57,12 @@ from pathlib import Path
 
 import torch
 import ultralytics
+import PIL
 
 print("Python:", sys.version.split()[0])
 print("PyTorch:", torch.__version__)
 print("Ultralytics:", ultralytics.__version__)
+print("Pillow:", PIL.__version__)
 print("CUDA متاح:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("GPU:", torch.cuda.get_device_name(0))

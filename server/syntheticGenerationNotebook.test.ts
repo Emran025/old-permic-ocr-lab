@@ -15,6 +15,8 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("evaluation_model.val");
     expect(code).toContain('"workers": 6');
     expect(code).toContain("torch.cuda.is_available()");
+    expect(code).toContain('"Pillow==11.3.0"');
+    expect(code).toContain("import PIL");
   });
 
   it("keeps the Colab checkpoint, evaluation, and gated publication workflow explicit", () => {
