@@ -20,6 +20,9 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("# 9) أدوات حفظ ذري واستئناف متحقق منه من GitHub");
     expect(code).toContain("import os");
     expect(code).toContain("FORCE_REGENERATE_DATASET = False");
+    expect(code).toContain("BATCH_CANDIDATES = (8, 6, 4)");
+    expect(code).toContain("report_gpu_memory");
+    expect(code).toContain("torch.cuda.empty_cache()");
   });
 
   it("keeps the Colab checkpoint, evaluation, and gated publication workflow explicit", () => {

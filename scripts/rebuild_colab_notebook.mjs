@@ -51,9 +51,14 @@ const cells = [
 # يثبت Pillow 11.3.0 بدل الترقية غير المقيدة لمنع اختلاط ملفات PIL الداخلية في جلسات Colab الحديثة.
 %pip install -q --upgrade "ultralytics>=8.3,<9" pyyaml matplotlib "Pillow==11.3.0"
 
+import os
 import sys
 import subprocess
 from pathlib import Path
+
+# تجزئة الذاكرة في جلسات Colab الطويلة قد تترك مساحات غير متجاورة؛ هذا الإعداد
+# يقلل ذلك قبل أول استخدام لـCUDA ولا يزيد الذاكرة المطلوبة وحده.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch
 import ultralytics
@@ -298,11 +303,16 @@ INITIALIZATION = "from_scratch"
 assert INITIALIZATION == "from_scratch", "warm start يحتاج بروتوكول تجربة منفصل ولا يستخدم في baseline."
 EPOCHS = 100
 IMAGE_SIZE = 960
-BATCH_SIZE = 4
-WORKERS = 2
+# يبدأ S0 بضعف batch السابق (4 -> 8) لتحسين الاستفادة من T4، ثم يعود تلقائيًا
+# إلى 6 أو 4 فقط عند CUDA OOM. لا يرفع IMAGE_SIZE لأن ذلك يغير عقد baseline.
+BATCH_CANDIDATES = (8, 6, 4)
+EVAL_BATCH_SIZE = 8
+WORKERS = min(4, os.cpu_count() or 2)
+AMP = True
+DATASET_CACHE = False
 DEVICE = 0
 SEED = 20260819
-EXPERIMENT_NAME = f"old_permic_{STAGE.lower().replace('-', '_')}_baseline_v1"
+EXPERIMENT_NAME = f"old_permic_{STAGE.lower().replace('-', '_')}_baseline_v2_batch8"
 RUNS_ROOT = WORKSPACE / "runs"
 RUN_DIR = RUNS_ROOT / EXPERIMENT_NAME
 STATE_DIR = WORKSPACE / "training_state" / EXPERIMENT_NAME
@@ -312,7 +322,11 @@ LOCAL_RESULTS_CSV = STATE_DIR / "results.csv"
 LOCAL_STATE_JSON = STATE_DIR / "resume_state.json"
 LOCAL_CONTRACT_JSON = STATE_DIR / "data_contract.json"
 
-print(json.dumps({"experiment": EXPERIMENT_NAME, "epochs": EPOCHS, "imgsz": IMAGE_SIZE, "batch": BATCH_SIZE, "stage": STAGE}, ensure_ascii=False, indent=2))
+print(json.dumps({
+    "experiment": EXPERIMENT_NAME, "epochs": EPOCHS, "imgsz": IMAGE_SIZE,
+    "batch_candidates": BATCH_CANDIDATES, "eval_batch": EVAL_BATCH_SIZE,
+    "workers": WORKERS, "amp": AMP, "stage": STAGE,
+}, ensure_ascii=False, indent=2))
 `, "training-config"),
 
   code("checkpoint-tools", `
@@ -430,6 +444,26 @@ def sync_latest_checkpoint(trainer):
     }
     atomic_json(LOCAL_STATE_JSON, state)
     publish_latest_checkpoint(state)
+
+def report_gpu_memory(trainer):
+    if not torch.cuda.is_available():
+        return
+    device_index = torch.cuda.current_device()
+    total_gib = torch.cuda.get_device_properties(device_index).total_memory / (1024 ** 3)
+    allocated_gib = torch.cuda.memory_allocated(device_index) / (1024 ** 3)
+    reserved_gib = torch.cuda.memory_reserved(device_index) / (1024 ** 3)
+    peak_gib = torch.cuda.max_memory_allocated(device_index) / (1024 ** 3)
+    print(json.dumps({
+        "epoch": int(trainer.epoch) + 1,
+        "gpu_allocated_gib": round(allocated_gib, 2),
+        "gpu_reserved_gib": round(reserved_gib, 2),
+        "gpu_peak_gib": round(peak_gib, 2),
+        "gpu_total_gib": round(total_gib, 2),
+    }, ensure_ascii=False))
+
+def add_training_callbacks(model):
+    model.add_callback("on_model_save", sync_latest_checkpoint)
+    model.add_callback("on_train_epoch_end", report_gpu_memory)
 
 def restore_latest_checkpoint_from_github():
     ensure_checkpoint_repo()
@@ -708,17 +742,37 @@ restored_checkpoint = RESTORE_LATEST_GITHUB_CHECKPOINT and restore_latest_checkp
 
 if restored_checkpoint:
     assert_resume_is_compatible()
-    model = YOLO(str(LOCAL_LAST_PT))
-    model.add_callback("on_model_save", sync_latest_checkpoint)
-    results = model.train(resume=True)
+
+def is_cuda_oom(error):
+    message = str(error).lower()
+    return "out of memory" in message or "cuda error: out of memory" in message
+
+last_oom = None
+for EFFECTIVE_BATCH_SIZE in BATCH_CANDIDATES:
+    try:
+        print(f"بدء التدريب مع batch={EFFECTIVE_BATCH_SIZE}؛ candidates={BATCH_CANDIDATES}")
+        model = YOLO(str(LOCAL_LAST_PT)) if restored_checkpoint else YOLO(MODEL_YAML)
+        add_training_callbacks(model)
+        if restored_checkpoint:
+            results = model.train(
+                resume=True, batch=EFFECTIVE_BATCH_SIZE, workers=WORKERS,
+                amp=AMP, cache=DATASET_CACHE,
+            )
+        else:
+            results = model.train(
+                data=str(DATA_YAML), epochs=EPOCHS, imgsz=IMAGE_SIZE, batch=EFFECTIVE_BATCH_SIZE, device=DEVICE,
+                workers=WORKERS, amp=AMP, cache=DATASET_CACHE, project=str(RUNS_ROOT), name=EXPERIMENT_NAME,
+                exist_ok=True, pretrained=False, seed=SEED, deterministic=True, plots=True, save=True, save_period=1,
+            )
+        break
+    except RuntimeError as error:
+        if not is_cuda_oom(error) or EFFECTIVE_BATCH_SIZE == BATCH_CANDIDATES[-1]:
+            raise
+        last_oom = error
+        torch.cuda.empty_cache()
+        print(f"نفدت الذاكرة مع batch={EFFECTIVE_BATCH_SIZE}؛ إعادة المحاولة آليًا بحجم أصغر.")
 else:
-    model = YOLO(MODEL_YAML)
-    model.add_callback("on_model_save", sync_latest_checkpoint)
-    results = model.train(
-        data=str(DATA_YAML), epochs=EPOCHS, imgsz=IMAGE_SIZE, batch=BATCH_SIZE, device=DEVICE,
-        workers=WORKERS, project=str(RUNS_ROOT), name=EXPERIMENT_NAME, exist_ok=True,
-        pretrained=False, seed=SEED, deterministic=True, plots=True, save=True, save_period=1,
-    )
+    raise RuntimeError(f"فشلت كل أحجام batch: {BATCH_CANDIDATES}") from last_oom
 
 RUN_DIR = Path(model.trainer.save_dir) if getattr(model, "trainer", None) else RUN_DIR
 BEST_PT = RUN_DIR / "weights" / "best.pt"
@@ -730,7 +784,7 @@ print("اكتمل التدريب أو الاستئناف. أفضل وزن:", BES
   code("test-evaluation", `
 # 11) تقييم test مستقل وبناء قياسات قابلة للنشر. لا تتجاوز هذه الخلية عند إصدار النتائج.
 evaluation_model = YOLO(str(BEST_PT))
-metrics = evaluation_model.val(data=str(DATA_YAML), split="test", imgsz=IMAGE_SIZE, batch=BATCH_SIZE, device=DEVICE, plots=True)
+metrics = evaluation_model.val(data=str(DATA_YAML), split="test", imgsz=IMAGE_SIZE, batch=EVAL_BATCH_SIZE, device=DEVICE, plots=True)
 
 def metric_value(path, default=None):
     value = metrics

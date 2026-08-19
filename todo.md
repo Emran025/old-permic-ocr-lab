@@ -100,3 +100,5 @@
 - [x] إضافة مسار تنزيل مباشر من مجلد Drive العام إلى Colab عندما لا يظهر الاختصار في Drive المركب للحساب الثاني، مع تحقق من ملفات الاستئناف قبل النسخ.
 - [x] إضافة خلية Colab تأخذ رابط مجلد Drive عام لـ`workspace_cache`، وتنزله إلى القرص المؤقت ثم تستعيد cache وtraining_state وتتحقق من `resume_state.json` قبل الاستئناف.
 - [x] تبسيط دفتر Colab بإزالة مزامنة واسترجاع Google Drive واعتماد GitHub فقط لحفظ checkpoint وملفات الاستئناف بعد كل epoch.
+- [ ] تشغيل baseline S0 الفعلي من دفتر GitHub-only والتحقق من ظهور أول checkpoint موثق في فرع colab-checkpoints.
+- [x] ضبط baseline S0 لاستهلاك ذاكرة T4 بصورة أعلى عبر batch متدرج وإعدادات DataLoader ملائمة، مع مسار رجوع آمن عند نفاد الذاكرة.
