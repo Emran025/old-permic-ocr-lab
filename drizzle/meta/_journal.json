@@ -15,6 +15,13 @@
       "when": 1787068217029,
       "tag": "0001_absurd_marten_broadcloak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787099519947,
+      "tag": "0002_faithful_kang",
+      "breakpoints": true
     }
   ]
 }

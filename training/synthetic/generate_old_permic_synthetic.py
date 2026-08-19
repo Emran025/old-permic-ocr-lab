@@ -13,10 +13,11 @@ import json
 import random
 import shutil
 import unicodedata
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 DEFAULT_FONT_PATH = Path("/usr/share/fonts/truetype/noto/NotoSansOldPermic-Regular.ttf")
 LAYOUTS = ("isolated-glyph", "ordered-lines", "structured-pages")
@@ -108,12 +109,12 @@ def finalize_image(image: Image.Image, profile: Profile, rng: random.Random) -> 
     if profile.blur_radius:
         image = image.filter(ImageFilter.GaussianBlur(profile.blur_radius))
     if profile.noise_strength:
-        pixels = image.load()
-        for py in range(image.height):
-            for px in range(image.width):
-                red, green, blue = pixels[px, py]
-                noise = rng.randint(-profile.noise_strength, profile.noise_strength)
-                pixels[px, py] = tuple(max(0, min(255, channel + noise)) for channel in (red, green, blue))
+        # One deterministic byte stream plus Pillow channel arithmetic is markedly faster than Python per-pixel loops.
+        noise = Image.frombytes("L", image.size, rng.randbytes(image.width * image.height))
+        scale = profile.noise_strength / 127.0
+        darker = noise.point(lambda value: max(0, round((127 - value) * scale)))
+        lighter = noise.point(lambda value: max(0, round((value - 128) * scale)))
+        image = Image.merge("RGB", tuple(ImageChops.add(ImageChops.subtract(channel, darker), lighter) for channel in image.split()))
     return image
 
 
@@ -283,6 +284,34 @@ def render_sample(
     raise ValueError(f"Unsupported layout: {layout}")
 
 
+def render_and_write_sample(
+    task: tuple[int, str, int, int | None, Path, Profile, int, int, Path, str, list[dict[str, str]]]
+) -> dict[str, object]:
+    """Render and save one independent asset; task order, seeds, and names stay deterministic across worker counts."""
+    index, split, sample_seed, class_id_override, output_dir, profile, image_size, font_size, font_path, layout, characters = task
+    image, labels, sequence, geometry = render_sample(layout, characters, profile, sample_seed, image_size, font_size, font_path, class_id_override)
+    stem = f"old_permic_{layout}_{profile.name}_{index:05d}"
+    image.save(output_dir / "images" / split / f"{stem}.png")
+    with (output_dir / "labels" / split / f"{stem}.txt").open("w", encoding="utf-8") as label_file:
+        for class_id, center_x, center_y, width, height in labels:
+            label_file.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
+    unit = {"isolated-glyph": "S0-glyph-asset", "ordered-lines": "S1-ordered-line", "structured-pages": "S2-structured-page"}[layout]
+    return {
+        "asset_id": stem,
+        "parent_id": None,
+        "unit": unit,
+        "partition": split,
+        "seed": sample_seed,
+        "profile": profile.name,
+        "sequence": sequence,
+        "class_ids": [record[0] for record in labels],
+        "master_glyph_ids": [characters[record[0]]["codepoint"] for record in labels],
+        "page_geometry": geometry,
+        "image": f"images/{split}/{stem}.png",
+        "label": f"labels/{split}/{stem}.txt",
+    }
+
+
 def write_dataset(
     output_dir: Path,
     profile: Profile,
@@ -293,12 +322,15 @@ def write_dataset(
     font_path: Path,
     layout: str,
     balanced_classes: bool = False,
+    workers: int = 1,
 ) -> dict[str, object]:
     if not font_path.exists():
         raise FileNotFoundError(f"Required font is missing: {font_path}")
     characters = old_permic_characters()
     if balanced_classes and layout != "isolated-glyph":
         raise ValueError("--balanced-classes is available only for isolated-glyph S0 assets.")
+    if workers < 1:
+        raise ValueError("--workers must be at least 1")
     if output_dir.exists():
         shutil.rmtree(output_dir)
     split_names = ("train", "val", "test")
@@ -318,8 +350,8 @@ def write_dataset(
             return "val"
         return "test"
 
-    asset_records: list[dict[str, object]] = []
     split_class_positions = {split: 0 for split in split_names}
+    tasks = []
     for index in range(samples):
         sample_seed = seed + index
         split = split_for(index)
@@ -327,29 +359,12 @@ def write_dataset(
         if balanced_classes:
             class_id_override = split_class_positions[split] % len(characters)
             split_class_positions[split] += 1
-        image, labels, sequence, geometry = render_sample(layout, characters, profile, sample_seed, image_size, font_size, font_path, class_id_override)
-        stem = f"old_permic_{layout}_{profile.name}_{index:05d}"
-        image.save(output_dir / "images" / split / f"{stem}.png")
-        with (output_dir / "labels" / split / f"{stem}.txt").open("w", encoding="utf-8") as label_file:
-            for class_id, center_x, center_y, width, height in labels:
-                label_file.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
-        unit = {"isolated-glyph": "S0-glyph-asset", "ordered-lines": "S1-ordered-line", "structured-pages": "S2-structured-page"}[layout]
-        asset_records.append(
-            {
-                "asset_id": stem,
-                "parent_id": None,
-                "unit": unit,
-                "partition": split,
-                "seed": sample_seed,
-                "profile": profile.name,
-                "sequence": sequence,
-                "class_ids": [record[0] for record in labels],
-                "master_glyph_ids": [characters[record[0]]["codepoint"] for record in labels],
-                "page_geometry": geometry,
-                "image": f"images/{split}/{stem}.png",
-                "label": f"labels/{split}/{stem}.txt",
-            }
-        )
+        tasks.append((index, split, sample_seed, class_id_override, output_dir, profile, image_size, font_size, font_path, layout, characters))
+    if workers == 1:
+        asset_records = [render_and_write_sample(task) for task in tasks]
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            asset_records = list(executor.map(render_and_write_sample, tasks, chunksize=32))
 
     class_map = [{"id": index, "label": record["glyph"], **record} for index, record in enumerate(characters)]
     class_payload = {"classes": class_map, "source": "Unicode Old Permic base-letter assignments", "synthetic": True}
@@ -370,6 +385,7 @@ def write_dataset(
         "class_count": len(class_map),
         "split_counts": split_counts,
         "class_balance_policy": "cyclic-per-split" if balanced_classes else "random",
+        "generation_workers": workers,
         "lineage_manifest": "assets.jsonl",
         "real_manuscripts_included": False,
         "notes": "Synthetic character-detection data from a font. It contains no historical manuscript pixels and does not prove palaeographic OCR performance.",
@@ -388,11 +404,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=10350)
     parser.add_argument("--image-size", type=int, default=640)
     parser.add_argument("--font-size", type=int, default=58)
+    parser.add_argument("--workers", type=int, default=1, help="Independent rendering workers; output stays deterministic across worker counts.")
     parser.add_argument("--font", type=Path, default=DEFAULT_FONT_PATH, help="Path to a font containing Old Permic Unicode glyphs.")
     args = parser.parse_args()
     if args.samples < 1:
         raise ValueError("--samples must be at least 1")
-    manifest = write_dataset(args.output, PROFILES[args.profile], args.samples, args.seed, args.image_size, args.font_size, args.font, args.layout, args.balanced_classes)
+    manifest = write_dataset(args.output, PROFILES[args.profile], args.samples, args.seed, args.image_size, args.font_size, args.font, args.layout, args.balanced_classes, args.workers)
     print(json.dumps(manifest, ensure_ascii=False))
 
 

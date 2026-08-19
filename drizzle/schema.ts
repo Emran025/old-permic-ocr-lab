@@ -1,4 +1,4 @@
-import { int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -38,9 +38,48 @@ export const analyses = mysqlTable("analyses", {
   completedAt: timestamp("completedAt"),
 });
 
+/** Public training releases published by the Colab notebook after test evaluation. */
+export const trainingReleases = mysqlTable("training_releases", {
+  id: int("id").autoincrement().primaryKey(),
+  releaseId: varchar("releaseId", { length: 180 }).notNull().unique(),
+  sourceCommit: varchar("sourceCommit", { length: 64 }).notNull(),
+  modelScope: varchar("modelScope", { length: 180 }).notNull(),
+  publicationStatus: varchar("publicationStatus", { length: 64 }).notNull(),
+  realManuscriptOcrValidated: boolean("realManuscriptOcrValidated").notNull().default(false),
+  releaseUrl: text("releaseUrl").notNull(),
+  releaseSha256: varchar("releaseSha256", { length: 64 }).notNull(),
+  metrics: json("metrics").notNull(),
+  dataContract: json("dataContract").notNull(),
+  assets: json("assets").notNull(),
+  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Singleton configuration and health state for the project-level GitHub release check. */
+export const trainingSyncStates = mysqlTable("training_sync_states", {
+  id: int("id").autoincrement().primaryKey(),
+  stateKey: varchar("stateKey", { length: 96 }).notNull().unique(),
+  repository: varchar("repository", { length: 255 }).notNull(),
+  branch: varchar("branch", { length: 128 }).notNull(),
+  pointerPath: varchar("pointerPath", { length: 512 }).notNull(),
+  scheduleCronTaskUid: varchar("scheduleCronTaskUid", { length: 65 }).unique(),
+  lastPointerSha256: varchar("lastPointerSha256", { length: 64 }),
+  lastReleaseId: varchar("lastReleaseId", { length: 180 }),
+  lastCheckedAt: timestamp("lastCheckedAt"),
+  lastSuccessAt: timestamp("lastSuccessAt"),
+  lastError: text("lastError"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Analysis = typeof analyses.$inferSelect;
 export type InsertAnalysis = typeof analyses.$inferInsert;
+export type TrainingRelease = typeof trainingReleases.$inferSelect;
+export type InsertTrainingRelease = typeof trainingReleases.$inferInsert;
+export type TrainingSyncState = typeof trainingSyncStates.$inferSelect;
+export type InsertTrainingSyncState = typeof trainingSyncStates.$inferInsert;
 
 // TODO: Add your tables here

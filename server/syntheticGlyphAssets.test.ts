@@ -71,4 +71,20 @@ describe("synthetic Old Permic glyph assets", () => {
     expect(Math.max(deformedWidth, deformedHeight)).toBeLessThan(Math.max(cleanWidth, cleanHeight));
     expect(deformedManifest.profile.background_fragment_count).toBeGreaterThan(0);
   });
+
+  it("reproduces the optimized controlled-deformation images byte-for-byte from the same seed", () => {
+    const firstRoot = mkdtempSync(join(tmpdir(), "old-permic-fast-noise-first-"));
+    const secondRoot = mkdtempSync(join(tmpdir(), "old-permic-fast-noise-second-"));
+    roots.push(firstRoot, secondRoot);
+    const generator = join(process.cwd(), "training", "synthetic", "generate_old_permic_synthetic.py");
+    const font = "/usr/share/fonts/truetype/noto/NotoSansOldPermic-Regular.ttf";
+    execFileSync("python3", [generator, "--output", firstRoot, "--samples", "4", "--seed", "20350", "--layout", "isolated-glyph", "--profile", "controlled-deformation", "--font", font, "--workers", "1"], { encoding: "utf8" });
+    execFileSync("python3", [generator, "--output", secondRoot, "--samples", "4", "--seed", "20350", "--layout", "isolated-glyph", "--profile", "controlled-deformation", "--font", font, "--workers", "2"], { encoding: "utf8" });
+    for (const split of ["train", "val", "test"]) {
+      const files = readdirSync(join(firstRoot, "images", split));
+      for (const file of files) {
+        expect(readFileSync(join(firstRoot, "images", split, file))).toEqual(readFileSync(join(secondRoot, "images", split, file)));
+      }
+    }
+  });
 });

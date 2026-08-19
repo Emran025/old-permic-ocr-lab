@@ -2,12 +2,14 @@ import { COOKIE_NAME } from "@shared/const";
 import { MODEL_STATUS } from "@shared/oldPermicOcr";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { createAnalysis, getAnalysisForUser, listAnalysesForUser, updateAnalysisModelStatus } from "./db";
 import { parseImageDataUrl, safeFileName } from "./oldPermicOcr";
 import { storagePut } from "./storage";
+import { getTrainingReleaseOverview, syncPublishedTrainingRelease } from "./trainingReleaseSync";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -53,6 +55,14 @@ export const appRouter = router({
       return updateAnalysisModelStatus(input.analysisId, ctx.user.id);
     }),
     list: protectedProcedure.query(({ ctx }) => listAnalysesForUser(ctx.user.id)),
+  }),
+
+  trainingRelease: router({
+    status: publicProcedure.query(() => getTrainingReleaseOverview()),
+    syncNow: protectedProcedure.mutation(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "هذه العملية مخصصة لمالك المشروع." });
+      return syncPublishedTrainingRelease();
+    }),
   }),
 
   // TODO: add feature routers here, e.g.

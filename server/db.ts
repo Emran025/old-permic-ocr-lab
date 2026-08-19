@@ -1,6 +1,15 @@
 import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { analyses, InsertAnalysis, InsertUser, users } from "../drizzle/schema";
+import {
+  analyses,
+  InsertAnalysis,
+  InsertTrainingRelease,
+  InsertTrainingSyncState,
+  InsertUser,
+  trainingReleases,
+  trainingSyncStates,
+  users,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -127,6 +136,67 @@ export async function updateAnalysisModelStatus(analysisId: number, userId: numb
     .set({ status: "model_not_configured", completedAt: new Date(), extractedText: "", detections: [] })
     .where(and(eq(analyses.id, analysisId), eq(analyses.userId, userId)));
   return getAnalysisForUser(analysisId, userId);
+}
+
+export async function getLatestTrainingRelease() {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  const rows = await db.select().from(trainingReleases).orderBy(desc(trainingReleases.syncedAt)).limit(1);
+  return rows[0];
+}
+
+export async function upsertTrainingRelease(release: InsertTrainingRelease) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  await db.insert(trainingReleases).values(release).onDuplicateKeyUpdate({
+    set: {
+      sourceCommit: release.sourceCommit,
+      modelScope: release.modelScope,
+      publicationStatus: release.publicationStatus,
+      realManuscriptOcrValidated: release.realManuscriptOcrValidated,
+      releaseUrl: release.releaseUrl,
+      releaseSha256: release.releaseSha256,
+      metrics: release.metrics,
+      dataContract: release.dataContract,
+      assets: release.assets,
+      syncedAt: new Date(),
+    },
+  });
+  const rows = await db.select().from(trainingReleases).where(eq(trainingReleases.releaseId, release.releaseId)).limit(1);
+  return rows[0];
+}
+
+export async function getTrainingSyncState(stateKey: string) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  const rows = await db.select().from(trainingSyncStates).where(eq(trainingSyncStates.stateKey, stateKey)).limit(1);
+  return rows[0];
+}
+
+export async function getTrainingSyncStateByTaskUid(taskUid: string) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  const rows = await db.select().from(trainingSyncStates).where(eq(trainingSyncStates.scheduleCronTaskUid, taskUid)).limit(1);
+  return rows[0];
+}
+
+export async function upsertTrainingSyncState(state: InsertTrainingSyncState) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  await db.insert(trainingSyncStates).values(state).onDuplicateKeyUpdate({
+    set: {
+      repository: state.repository,
+      branch: state.branch,
+      pointerPath: state.pointerPath,
+      scheduleCronTaskUid: state.scheduleCronTaskUid,
+      lastPointerSha256: state.lastPointerSha256,
+      lastReleaseId: state.lastReleaseId,
+      lastCheckedAt: state.lastCheckedAt,
+      lastSuccessAt: state.lastSuccessAt,
+      lastError: state.lastError,
+    },
+  });
+  return getTrainingSyncState(state.stateKey);
 }
 
 // TODO: add feature queries here as your schema grows.
