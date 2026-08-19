@@ -36,6 +36,11 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("assert_resume_is_compatible");
     expect(code).toContain("RUN_WORKSPACE_BACKUP = False");
     expect(code).toContain("RESTORE_WORKSPACE_FROM_BACKUP = False");
+    expect(code).toContain("DOWNLOAD_PUBLIC_DRIVE_BACKUP = False");
+    expect(code).toContain("PUBLIC_DRIVE_FOLDER_URL");
+    expect(code).toContain("auth.authenticate_user()");
+    expect(code).toContain("MediaIoBaseDownload");
+    expect(code).toContain("last_pt_sha256");
     expect(code).toContain("latest_backup.json");
     expect(code).toContain("ALLOW_WORKSPACE_REPLACE = False");
     expect(code).toContain("save_period=1");

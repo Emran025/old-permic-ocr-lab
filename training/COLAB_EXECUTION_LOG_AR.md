@@ -53,3 +53,7 @@
 أضيفت إلى commit `3cd3eb9` خلية نسخ احتياطي يدوية تنسخ `/content/old-permic-ocr-workspace` و`training_state` إلى `MyDrive/OldPermicOCRLab/workspace_backup` باستعمال `rsync`، ثم تكتب `latest_backup.json` ببصمات الملفات الحرجة بعد إكمال النسخ. أضيفت كذلك خلية استرجاع تتحقق من manifest وتعيد workspace و`last.pt` و`resume_state` إلى المسارات المتوقعة قبل التوليد والتدريب على حساب أو جهاز آخر. لا تنقل هذه الآلية dataset أو الأوزان إلى GitHub ولا تجعل Drive عامًا تلقائيًا.
 
 أصلحت النسخة نفسها استيراد `os` في خلية أدوات checkpoint، بحيث تبقى الدالة `atomic_copy` قادرة على استبدال ملفات `last.pt` وmetadata ذريًا عند الحفظ والاستئناف.
+
+## تحقق الوصول من الحساب الثاني
+
+فُتح رابط Google Drive العام من الحساب الثاني، وظهرت داخل `OldPermicOCRLab` المجلدات `synthetic_cache` و`training_state` و`workspace_cache`. يثبت ذلك أن مشاركة المجلد أتاحت الوصول إلى نسخة النسخ السريع. لا يكفي ظهور اسم المجلد وحده لإثبات اكتمال النقل؛ يلزم تشغيل أمر الاسترجاع في جلسة Colab جديدة والتحقق من `manifest.json` و`resume_state.json` و`last.pt` قبل متابعة التدريب.

@@ -382,6 +382,8 @@ def assert_resume_is_compatible():
 خلية النسخ تنشئ مرآة قابلة للاستئناف في Google Drive داخل المسار "OldPermicOCRLab/workspace_backup". تنسخ مساحة العمل التي تضم dataset/cache وruns، وتنسخ حالة التدريب، ثم تكتب manifest فقط بعد اكتمال النسختين. لا ترفع هذه الملفات إلى GitHub ولا تجعل Drive عامًا تلقائيًا.
 
 عند الانتقال إلى حساب آخر، انقل أو نزّل مجلد "workspace_backup" إلى Drive الحساب الجديد أو إلى قرص Colab المؤقت، ثم اضبط "RESTORE_SOURCE_ROOT" في خلية الاسترجاع وشغّلها قبل خلية التوليد. تتحقق الخلية من manifest وتعيد checkout إلى commit المطابق قبل متابعة التدريب من "last.pt".
+
+إذا شاركت مجلد Drive عام، توجد خلية مستقلة تقبل رابط المجلد الأعلى وتستخدم Google Drive API بحساب Colab الحالي لتنزيل المجلد الفرعي "workspace_cache" تدريجيًا إلى القرص المؤقت. لا تستخدم هذه الخلية gdown ولا تتوقف عند أول 50 ملفًا؛ وتتحقق من resume_state وlast.pt وmanifest قبل أن تسمح بالاستئناف.
 `, "workspace-handoff"),
 
   code("backup-workspace-to-drive", `
@@ -495,6 +497,115 @@ if RESTORE_WORKSPACE_FROM_BACKUP:
 else:
     print("الاسترجاع مغلق. على حساب جديد اضبط RESTORE_WORKSPACE_FROM_BACKUP=True قبل التوليد.")
 `, "restore-workspace-from-drive"),
+
+  code("restore-public-drive-folder", `
+# 9c) تنزيل نسخة workspace_cache من رابط Drive عام مباشرةً إلى Colab ثم استعادتها.
+# الصق رابط المجلد الأعلى الذي يحتوي workspace_cache، لا رابط ملف فردي.
+DOWNLOAD_PUBLIC_DRIVE_BACKUP = False
+PUBLIC_DRIVE_FOLDER_URL = ""
+PUBLIC_BACKUP_CHILD_NAME = "workspace_cache"
+PUBLIC_DOWNLOAD_ROOT = Path("/content/old-permic-public-transfer")
+ALLOW_PUBLIC_WORKSPACE_REPLACE = False
+
+if DOWNLOAD_PUBLIC_DRIVE_BACKUP:
+    import io
+    import re
+    from google.colab import auth
+    import google.auth
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseDownload
+
+    folder_match = re.search(r"/folders/([A-Za-z0-9_-]+)", PUBLIC_DRIVE_FOLDER_URL)
+    assert folder_match, "الصق رابط مجلد Google Drive عامًا بصيغة drive.google.com/drive/folders/..."
+    public_root_id = folder_match.group(1)
+    auth.authenticate_user()
+    credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/drive.readonly"])
+    public_drive = build("drive", "v3", credentials=credentials, cache_discovery=False)
+    folder_mime = "application/vnd.google-apps.folder"
+
+    def public_children(parent_id):
+        children, page_token = [], None
+        while True:
+            response = public_drive.files().list(
+                q=f"'{parent_id}' in parents and trashed = false",
+                spaces="drive",
+                fields="nextPageToken,files(id,name,mimeType,size)",
+                pageToken=page_token,
+                pageSize=1000,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            ).execute()
+            children.extend(response.get("files", []))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                return children
+
+    root_children = public_children(public_root_id)
+    matching = [item for item in root_children if item["name"] == PUBLIC_BACKUP_CHILD_NAME and item["mimeType"] == folder_mime]
+    assert len(matching) == 1, f"لم يعثر على مجلد {PUBLIC_BACKUP_CHILD_NAME} مرة واحدة داخل الرابط العام."
+    remote_backup = matching[0]
+    local_backup = PUBLIC_DOWNLOAD_ROOT / PUBLIC_BACKUP_CHILD_NAME
+
+    def download_public_tree(remote_folder_id, local_folder):
+        local_folder.mkdir(parents=True, exist_ok=True)
+        for item in public_children(remote_folder_id):
+            local_path = local_folder / item["name"]
+            if item["mimeType"] == folder_mime:
+                download_public_tree(item["id"], local_path)
+                continue
+            expected_size = int(item.get("size") or 0)
+            if local_path.is_file() and local_path.stat().st_size == expected_size:
+                continue
+            partial_path = local_path.with_name(local_path.name + ".part")
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            request = public_drive.files().get_media(fileId=item["id"], supportsAllDrives=True)
+            with partial_path.open("wb") as stream:
+                downloader = MediaIoBaseDownload(stream, request, chunksize=8 * 1024 * 1024)
+                completed = False
+                while not completed:
+                    status, completed = downloader.next_chunk()
+                    if status:
+                        print(f"{local_path.relative_to(PUBLIC_DOWNLOAD_ROOT)}: {int(status.progress() * 100)}%")
+            assert partial_path.stat().st_size == expected_size, f"حجم غير صحيح بعد تنزيل {local_path.name}"
+            os.replace(partial_path, local_path)
+
+    download_public_tree(remote_backup["id"], local_backup)
+    public_workspace = local_backup / "workspace"
+    public_state = local_backup / "training_state"
+    assert public_workspace.is_dir() and public_state.is_dir(), "النسخة العامة لا تضم workspace وtraining_state المطلوبين."
+    resume_candidates = sorted(public_state.glob("*/resume_state.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+    assert resume_candidates, "لم يعثر على resume_state.json في النسخة العامة."
+    downloaded_resume = json.loads(resume_candidates[0].read_text(encoding="utf-8"))
+    downloaded_last_pt = resume_candidates[0].with_name("last.pt")
+    assert downloaded_last_pt.is_file(), "لم يعثر على last.pt بجوار resume_state.json."
+    assert downloaded_resume.get("last_pt_sha256") == sha256_file(downloaded_last_pt), "بصمة last.pt العامة غير مطابقة لـresume_state.json."
+    downloaded_stage = downloaded_resume["stage"]
+    downloaded_manifest = public_workspace / "synthetic" / downloaded_stage / "manifest.json"
+    assert downloaded_manifest.is_file(), "لم يعثر على manifest مرحلة البيانات في النسخة العامة."
+    assert downloaded_resume.get("manifest_sha256") == sha256_file(downloaded_manifest), "بصمة manifest العامة غير مطابقة لحالة الاستئناف."
+
+    if WORKSPACE.exists() and any(WORKSPACE.iterdir()):
+        assert ALLOW_PUBLIC_WORKSPACE_REPLACE, "Workspace الحالي غير فارغ. راجعه ثم غيّر ALLOW_PUBLIC_WORKSPACE_REPLACE إلى True للاستبدال."
+        shutil.rmtree(WORKSPACE)
+    WORKSPACE.mkdir(parents=True, exist_ok=True)
+    rsync_tree(public_workspace, WORKSPACE)
+    rsync_tree(public_state, DRIVE_STATE_ROOT)
+
+    public_commit = downloaded_resume.get("source_commit")
+    if public_commit and public_commit != SOURCE_COMMIT:
+        subprocess.run(["git", "-C", str(PROJECT_ROOT), "fetch", "--depth", "1", "origin", public_commit], check=True)
+        subprocess.run(["git", "-C", str(PROJECT_ROOT), "checkout", "--detach", public_commit], check=True)
+        SOURCE_COMMIT = subprocess.check_output(["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"], text=True).strip()
+    print(json.dumps({
+        "public_folder_id": public_root_id,
+        "restored_stage": downloaded_stage,
+        "experiment_name": downloaded_resume.get("experiment_name"),
+        "source_commit": SOURCE_COMMIT,
+        "download_root": str(PUBLIC_DOWNLOAD_ROOT),
+    }, ensure_ascii=False, indent=2))
+else:
+    print("تنزيل الرابط العام مغلق. الصق الرابط ثم غيّر DOWNLOAD_PUBLIC_DRIVE_BACKUP إلى True عند الانتقال إلى حساب آخر.")
+`, "restore-public-drive-folder"),
 
   code("training-run", `
 # 10) التدريب أو الاستئناف. يحفظ Ultralytics كل epoch ثم تنسخ callback آخر حالة إلى Drive.
