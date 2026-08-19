@@ -374,7 +374,7 @@ def ensure_checkpoint_repo():
 
 def push_checkpoint_branch():
     push = subprocess.run([
-        "git", "-C", str(CHECKPOINT_REPO), "push", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}"
+        "git", "-C", str(CHECKPOINT_REPO), "push", "--set-upstream", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}"
     ], text=True, capture_output=True)
     if push.returncode != 0 and CHECKPOINT_USE_COLAB_SECRET_FALLBACK:
         from base64 import b64encode
@@ -384,7 +384,7 @@ def push_checkpoint_branch():
         write_authorization = b64encode(f"x-access-token:{github_write_token}".encode("utf-8")).decode("ascii")
         push = subprocess.run([
             "git", "-C", str(CHECKPOINT_REPO), "-c", f"http.extraHeader=AUTHORIZATION: basic {write_authorization}",
-            "push", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}"
+            "push", "--set-upstream", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}"
         ], text=True, capture_output=True)
         del github_write_token, write_authorization
     if push.returncode != 0:
