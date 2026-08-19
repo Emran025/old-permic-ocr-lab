@@ -569,6 +569,16 @@ if DOWNLOAD_PUBLIC_DRIVE_BACKUP:
             assert partial_path.stat().st_size == expected_size, f"حجم غير صحيح بعد تنزيل {local_path.name}"
             os.replace(partial_path, local_path)
 
+    def restore_public_tree(source, destination):
+        source, destination = Path(source), Path(destination)
+        assert source.is_dir(), f"لا يوجد مصدر للاسترجاع: {source}"
+        destination.mkdir(parents=True, exist_ok=True)
+        subprocess.run([
+            "rsync", "-a", "--partial", "--human-readable", "--info=progress2",
+            "--exclude=*.part", "--exclude=*.tmp", "--exclude=__pycache__",
+            f"{source}/", f"{destination}/",
+        ], check=True)
+
     download_public_tree(remote_backup["id"], local_backup)
     public_workspace = local_backup / "workspace"
     public_state = local_backup / "training_state"
@@ -588,8 +598,8 @@ if DOWNLOAD_PUBLIC_DRIVE_BACKUP:
         assert ALLOW_PUBLIC_WORKSPACE_REPLACE, "Workspace الحالي غير فارغ. راجعه ثم غيّر ALLOW_PUBLIC_WORKSPACE_REPLACE إلى True للاستبدال."
         shutil.rmtree(WORKSPACE)
     WORKSPACE.mkdir(parents=True, exist_ok=True)
-    rsync_tree(public_workspace, WORKSPACE)
-    rsync_tree(public_state, DRIVE_STATE_ROOT)
+    restore_public_tree(public_workspace, WORKSPACE)
+    restore_public_tree(public_state, DRIVE_STATE_ROOT)
 
     public_commit = downloaded_resume.get("source_commit")
     if public_commit and public_commit != SOURCE_COMMIT:
