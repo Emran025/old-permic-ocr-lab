@@ -47,6 +47,23 @@ rsync -a --partial --append-verify --info=progress2 \
 
 عند العمل من حساب أو جهاز آخر، انقل مجلد `workspace_backup` أو `workspace_cache` إلى Drive الحساب الجديد أو نزّله إلى قرص Colab. في حالة `workspace_backup` اضبط `RESTORE_SOURCE_ROOT` على مساره، ثم اجعل `RESTORE_WORKSPACE_FROM_BACKUP = True` وشغّل خلية الاسترجاع قبل خلية التوليد. إذا كان cache مستعادًا، اترك `FORCE_REGENERATE_DATASET = False`؛ سيتحقق الدفتر منه بدل مسحه وإعادة توليده. إذا كان `source_commit` للنسخة مختلفًا، تعيد خلية الاسترجاع المشروع تلقائيًا إلى commit المطابق قبل أن تسمح لآلية الاستئناف بالتحقق من `last.pt`.
 
+أما إذا استخدمت أمر Terminal السريع أعلاه، فاستعمل **هذا الاسترجاع المطابق** على الحساب الثاني بعد تشغيل خلايا البيئة والاستنساخ وربط Drive، وقبل خلية التوليد. ينسخ الأمر cache وحالة التدريب إلى المسارات التي يقرأها الدفتر، ثم يعيد المشروع إلى commit المسجل في `resume_state.json` كي لا ترفض آلية الاستئناف اختلاف المصدر.
+
+```bash
+rsync -a --partial --append-verify --info=progress2 \
+  /content/drive/MyDrive/OldPermicOCRLab/workspace_cache/workspace/ \
+  /content/old-permic-ocr-workspace/ && \
+rsync -a --partial --append-verify --info=progress2 \
+  /content/drive/MyDrive/OldPermicOCRLab/workspace_cache/training_state/ \
+  /content/drive/MyDrive/OldPermicOCRLab/training_state/ && \
+RESTORED_COMMIT=$(grep -o '"source_commit": "[^"]*"' /content/drive/MyDrive/OldPermicOCRLab/training_state/*/resume_state.json | head -n 1 | cut -d'"' -f4) && \
+test -n "$RESTORED_COMMIT" && \
+git -C /content/old-permic-ocr-lab fetch --depth 1 origin "$RESTORED_COMMIT" && \
+git -C /content/old-permic-ocr-lab checkout --detach "$RESTORED_COMMIT"
+```
+
+بعد نجاحه، أعد تشغيل خلية **Drive وبصمة الخط** لتحديث `SOURCE_COMMIT` في الذاكرة، ثم شغّل خلية إعداد المرحلة، وخلية التوليد مع `FORCE_REGENERATE_DATASET = False`، ثم عقد البيانات، وإعداد التدريب، وأدوات checkpoint، وأخيرًا خلية التدريب. إذا ظهرت أكثر من مجلد تجربة داخل `training_state`، اختر المقصود بتعيين `EXPERIMENT_NAME` نفسه المسجل داخل `resume_state.json` قبل تشغيل خلية التدريب.
+
 > لا تجعل Drive عامًا إلا إذا كنت تقبل أن يتمكن كل من يملك الرابط من تنزيل البيانات والوزن. لا توجد حاجة لجعل النسخة عامة عند النقل بين حسابات تملكها؛ مشاركة المجلد مباشرة أو إضافته كاختصار في Drive الحساب الثاني أقل تعرضًا.
 
 ## كيف يعمل الإصدار المنشور
