@@ -25,10 +25,10 @@ const cells = [
 
 ## ترتيب التشغيل
 
-1. شغّل خلايا البيئة والاستنساخ وGoogle Drive مرة واحدة لكل جلسة Colab.
+1. شغّل خلايا البيئة والاستنساخ وإعداد حفظ GitHub مرة واحدة لكل جلسة Colab.
 2. ابدأ بـ **S0 فقط**. راجع التقرير والصورة ذات الصناديق قبل تفعيل S0-d1، ثم S1، ثم S2. لا تمزج مراحل المنهج تلقائيًا.
-3. شغّل التدريب من الصفر في baseline مستقل لكل مرحلة مقبولة. تحفظ الخلية checkpoint في Drive بعد كل حفظ نموذج.
-4. شغّل تقييم test وبناء الإصدار. لا تفعّل خلية النشر إلى GitHub ما لم تكن النتائج مكتملة ومراجَعة.
+3. شغّل التدريب من الصفر في baseline مستقل لكل مرحلة مقبولة. تحفظ callback آخر checkpoint إلى فرع GitHub مخصص بعد **كل epoch**.
+4. شغّل تقييم test وبناء الإصدار. لا تفعّل خلية نشر إصدار الموقع ما لم تكن النتائج مكتملة ومراجَعة.
 `, "governance"),
 
   markdown("architecture-contract", `
@@ -37,10 +37,10 @@ const cells = [
 | نوع الأصل | المكان أثناء التدريب | ما ينشر إلى GitHub |
 |---|---|---|
 | المشروع والمولد والخط | نسخة مؤقتة في Colab | كود المصدر فقط |
-| البيانات الصناعية الكاملة | قرص Colab، ثم Drive اختياريًا | **لا تُرفع** |
-| "last.pt" وملف الاستئناف | Google Drive بعد كل حفظ | لا يُرفعان دوريًا |
-| "best.pt" وONNX | Drive بعد تقييم test | اختياريًا، بعد حد الحجم وقرار نشر صريح |
-| "class_map.json" و"data_contract.json" و"metrics.json" و"release.json" | مساحة التشغيل وDrive | نعم، لأنها صغيرة وقابلة للتحقق |
+| البيانات الصناعية الكاملة | قرص Colab المؤقت | **لا تُرفع** |
+| "last.pt" وملف الاستئناف | فرع "colab-checkpoints" بعد كل epoch | نعم، كأحدث snapshot فقط للاستئناف |
+| "best.pt" وONNX | مساحة التشغيل بعد تقييم test | اختياريًا، بعد حد الحجم وقرار نشر صريح |
+| "class_map.json" و"data_contract.json" و"metrics.json" و"release.json" | مساحة التشغيل وفرع checkpoints عند الحاجة | نعم، لأنها صغيرة وقابلة للتحقق |
 | معاينات ومخططات التقييم | مساحة التشغيل | صور محددة ومرتبطة بالإصدار فقط |
 
 لا يحمل GitHub أي token داخل الملفات. تطلب الخلايا الحساسة token مخفيًا في وقت التنفيذ عبر "getpass"، وتزيله من remote بعد الاستنساخ أو الدفع.
@@ -74,11 +74,13 @@ assert torch.cuda.is_available(), (
 `, "environment-gpu"),
 
   markdown("github-public-boundary", `
-## GitHub العام: القراءة بلا سر، والنشر بوابة مستقلة
+## GitHub العام: القراءة بلا سر، وcheckpoint بعد كل epoch
 
 المستودع الآن عام، لذلك تستنسخ خلية البيئة المشروع من GitHub مباشرةً بلا token وبلا بيانات اعتماد. ويبقى الموقع قادرًا على قراءة وصف الإصدار المنشور دون token خادمي.
 
-أما الدفع إلى GitHub فهو عملية كتابة مستقلة ومغلقة افتراضيًا. تستخدم خلية النشر جلسة Git المصرح بها داخل Colab. إذا لم تكن جلسة shell مخولة للدفع رغم تسجيل الدخول في واجهة Colab، فالبديل الآمن هو **Colab Secret** باسم "GITHUB_WRITE_TOKEN" بصلاحية كتابة محدودة للمستودع فقط؛ لا يكتب الدفتر السر في خلية أو ملف أو commit ولا يحتاجه للقراءة.
+بعد كل epoch، تنسخ callback فقط "last.pt" و"results.csv" و"data_contract.json" و"resume_state.json" إلى فرع "colab-checkpoints"، ثم تدفع **أحدث snapshot واحد** باستخدام "--force-with-lease" حتى لا ينتفخ تاريخ المستودع بنسخة وزن جديدة لكل epoch. لا ترفع البيانات الصناعية أو أي token.
+
+تستخدم الخلية جلسة Git المصرح بها داخل Colab. إذا لم تكن جلسة shell مخولة للدفع رغم تسجيل الدخول في واجهة Colab، فالبديل الآمن هو **Colab Secret** باسم "GITHUB_WRITE_TOKEN" بصلاحية كتابة محدودة للمستودع فقط؛ لا يكتب الدفتر السر في خلية أو ملف أو commit ولا يحتاجه للقراءة.
 `, "github-public-security"),
 
   code("clone-public-project", `
@@ -91,6 +93,8 @@ REPO_BRANCH = "main"
 REPO_URL = f"https://github.com/{REPO_OWNER}/{REPO_NAME}.git"
 WORKTREE = Path("/content/old-permic-ocr-lab")
 WORKSPACE = Path("/content/old-permic-ocr-workspace")
+CHECKPOINT_REPO = Path("/content/old-permic-checkpoints")
+CHECKPOINT_BRANCH = "colab-checkpoints"
 
 if WORKTREE.exists():
     shutil.rmtree(WORKTREE)
@@ -109,19 +113,11 @@ print("استنسخ المشروع عند:", PROJECT_ROOT)
 print("commit:", subprocess.check_output(["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"], text=True).strip())
 `, "clone-project"),
 
-  code("drive-and-integrity", `
-# 3) ربط Drive لحفظ الاستئناف، ثم تثبيت بصمات المصدر والخط.
-from google.colab import drive
+  code("github-checkpoint-integrity", `
+# 3) تثبيت بصمات المصدر والخط وإعداد فرع GitHub الذي يحفظ آخر checkpoint.
 import hashlib
 import json
 import time
-
-drive.mount("/content/drive", force_remount=False)
-DRIVE_ROOT = Path("/content/drive/MyDrive/OldPermicOCRLab")
-DRIVE_STATE_ROOT = DRIVE_ROOT / "training_state"
-DRIVE_DATA_ROOT = DRIVE_ROOT / "synthetic_cache"
-DRIVE_STATE_ROOT.mkdir(parents=True, exist_ok=True)
-DRIVE_DATA_ROOT.mkdir(parents=True, exist_ok=True)
 
 def sha256_file(path, block_size=1024 * 1024):
     digest = hashlib.sha256()
@@ -134,8 +130,8 @@ SOURCE_COMMIT = subprocess.check_output(["git", "-C", str(PROJECT_ROOT), "rev-pa
 FONT_SHA256 = sha256_file(FONT_PATH)
 EXPECTED_FONT_SHA256 = "f2eb57a47f62d490cb8a5efab95124f15b8941968cb03af780b939bae3b73006"
 assert FONT_SHA256 == EXPECTED_FONT_SHA256, "بصمة الخط لا تطابق الخط المعتمد للمشروع."
-print(json.dumps({"source_commit": SOURCE_COMMIT, "font_sha256": FONT_SHA256, "drive_root": str(DRIVE_ROOT)}, ensure_ascii=False, indent=2))
-`, "drive-integrity"),
+print(json.dumps({"source_commit": SOURCE_COMMIT, "font_sha256": FONT_SHA256, "checkpoint_branch": CHECKPOINT_BRANCH}, ensure_ascii=False, indent=2))
+`, "github-integrity"),
 
   markdown("curriculum", `
 ## المنهج الصناعي الحرفي
@@ -309,19 +305,23 @@ SEED = 20260819
 EXPERIMENT_NAME = f"old_permic_{STAGE.lower().replace('-', '_')}_baseline_v1"
 RUNS_ROOT = WORKSPACE / "runs"
 RUN_DIR = RUNS_ROOT / EXPERIMENT_NAME
-STATE_DIR = DRIVE_STATE_ROOT / EXPERIMENT_NAME
+STATE_DIR = WORKSPACE / "training_state" / EXPERIMENT_NAME
 STATE_DIR.mkdir(parents=True, exist_ok=True)
-DRIVE_LAST_PT = STATE_DIR / "last.pt"
-DRIVE_RESULTS_CSV = STATE_DIR / "results.csv"
-DRIVE_STATE_JSON = STATE_DIR / "resume_state.json"
-DRIVE_CONTRACT_JSON = STATE_DIR / "data_contract.json"
+LOCAL_LAST_PT = STATE_DIR / "last.pt"
+LOCAL_RESULTS_CSV = STATE_DIR / "results.csv"
+LOCAL_STATE_JSON = STATE_DIR / "resume_state.json"
+LOCAL_CONTRACT_JSON = STATE_DIR / "data_contract.json"
 
 print(json.dumps({"experiment": EXPERIMENT_NAME, "epochs": EPOCHS, "imgsz": IMAGE_SIZE, "batch": BATCH_SIZE, "stage": STAGE}, ensure_ascii=False, indent=2))
 `, "training-config"),
 
   code("checkpoint-tools", `
-# 9) أدوات حفظ ذري واستئناف متحقق منه. لا تحفظ token في هذه الملفات.
+# 9) أدوات حفظ ذري واستئناف متحقق منه من GitHub. لا تحفظ token في هذه الملفات.
 import os
+
+CHECKPOINT_USE_COLAB_SECRET_FALLBACK = True
+CHECKPOINT_ROOT = CHECKPOINT_REPO / "checkpoints"
+CHECKPOINT_EXPERIMENT_DIR = CHECKPOINT_ROOT / EXPERIMENT_NAME
 
 def atomic_copy(source, destination):
     source, destination = Path(source), Path(destination)
@@ -351,40 +351,122 @@ def current_resume_contract():
         "initialization": INITIALIZATION,
     }
 
+def git_output(arguments, *, check=True):
+    return subprocess.run(["git", *arguments], text=True, capture_output=True, check=check)
+
+def remote_checkpoint_branch_exists():
+    probe = git_output(["ls-remote", "--heads", REPO_URL, CHECKPOINT_BRANCH], check=False)
+    return bool(probe.stdout.strip())
+
+def ensure_checkpoint_repo():
+    if CHECKPOINT_REPO.exists() and (CHECKPOINT_REPO / ".git").exists():
+        return
+    if CHECKPOINT_REPO.exists():
+        shutil.rmtree(CHECKPOINT_REPO)
+    if remote_checkpoint_branch_exists():
+        subprocess.run(["git", "clone", "--depth", "1", "--branch", CHECKPOINT_BRANCH, REPO_URL, str(CHECKPOINT_REPO)], check=True)
+    else:
+        subprocess.run(["git", "clone", "--depth", "1", REPO_URL, str(CHECKPOINT_REPO)], check=True)
+        subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "switch", "--orphan", CHECKPOINT_BRANCH], check=True)
+        subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "rm", "-rf", "."], check=False)
+    subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "config", "user.name", "Old Permic Colab"], check=True)
+    subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "config", "user.email", "colab@local.invalid"], check=True)
+
+def push_checkpoint_branch():
+    push = subprocess.run([
+        "git", "-C", str(CHECKPOINT_REPO), "push", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}"
+    ], text=True, capture_output=True)
+    if push.returncode != 0 and CHECKPOINT_USE_COLAB_SECRET_FALLBACK:
+        from base64 import b64encode
+        from google.colab import userdata
+        github_write_token = userdata.get("GITHUB_WRITE_TOKEN")
+        assert github_write_token, "تعذر الدفع التلقائي. أضف Colab Secret باسم GITHUB_WRITE_TOKEN بصلاحية Contents: Write ثم أعد تشغيل التدريب."
+        write_authorization = b64encode(f"x-access-token:{github_write_token}".encode("utf-8")).decode("ascii")
+        push = subprocess.run([
+            "git", "-C", str(CHECKPOINT_REPO), "-c", f"http.extraHeader=AUTHORIZATION: basic {write_authorization}",
+            "push", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}"
+        ], text=True, capture_output=True)
+        del github_write_token, write_authorization
+    if push.returncode != 0:
+        raise RuntimeError(f"فشل دفع checkpoint إلى GitHub:\n{push.stderr}")
+
+def publish_latest_checkpoint(state):
+    ensure_checkpoint_repo()
+    remote_dir = CHECKPOINT_EXPERIMENT_DIR
+    atomic_copy(LOCAL_LAST_PT, remote_dir / "last.pt")
+    atomic_copy(LOCAL_CONTRACT_JSON, remote_dir / "data_contract.json")
+    if LOCAL_RESULTS_CSV.is_file():
+        atomic_copy(LOCAL_RESULTS_CSV, remote_dir / "results.csv")
+    atomic_json(remote_dir / "resume_state.json", state)
+    latest = {
+        "schema_version": 1, "experiment_name": EXPERIMENT_NAME, "stage": STAGE,
+        "source_commit": SOURCE_COMMIT, "checkpoint_path": str(remote_dir.relative_to(CHECKPOINT_REPO)),
+        "saved_after_epoch": state["saved_after_epoch"], "last_pt_sha256": state["last_pt_sha256"],
+    }
+    atomic_json(CHECKPOINT_ROOT / "latest.json", latest)
+    subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "add", "checkpoints"], check=True)
+    has_commit = subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "rev-parse", "--verify", "HEAD"], capture_output=True).returncode == 0
+    message = f"checkpoint: {EXPERIMENT_NAME} epoch {state['saved_after_epoch']}"
+    if has_commit:
+        subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "commit", "--amend", "--no-edit"], check=True)
+    else:
+        subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "commit", "-m", message], check=True)
+    push_checkpoint_branch()
+    print(f"دُفع checkpoint epoch {state['saved_after_epoch']} إلى GitHub/{CHECKPOINT_BRANCH}.")
+
 def sync_latest_checkpoint(trainer):
     local_last = Path(trainer.last)
     if not local_last.is_file():
         return
-    atomic_copy(local_last, DRIVE_LAST_PT)
+    atomic_copy(local_last, LOCAL_LAST_PT)
     local_results = Path(trainer.save_dir) / "results.csv"
     if local_results.is_file():
-        atomic_copy(local_results, DRIVE_RESULTS_CSV)
-    atomic_copy(CONTRACT_PATH, DRIVE_CONTRACT_JSON)
+        atomic_copy(local_results, LOCAL_RESULTS_CSV)
+    atomic_copy(CONTRACT_PATH, LOCAL_CONTRACT_JSON)
     state = current_resume_contract() | {
-        "last_pt_sha256": sha256_file(DRIVE_LAST_PT),
+        "last_pt_sha256": sha256_file(LOCAL_LAST_PT),
         "saved_after_epoch": int(trainer.epoch) + 1,
         "saved_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    atomic_json(DRIVE_STATE_JSON, state)
+    atomic_json(LOCAL_STATE_JSON, state)
+    publish_latest_checkpoint(state)
 
-def assert_resume_is_compatible():
-    assert DRIVE_LAST_PT.is_file() and DRIVE_STATE_JSON.is_file() and DRIVE_CONTRACT_JSON.is_file()
-    saved = json.loads(DRIVE_STATE_JSON.read_text(encoding="utf-8"))
+def restore_latest_checkpoint_from_github():
+    ensure_checkpoint_repo()
+    remote_state = CHECKPOINT_EXPERIMENT_DIR / "resume_state.json"
+    remote_last = CHECKPOINT_EXPERIMENT_DIR / "last.pt"
+    remote_contract = CHECKPOINT_EXPERIMENT_DIR / "data_contract.json"
+    if not (remote_state.is_file() and remote_last.is_file() and remote_contract.is_file()):
+        return False
+    saved = json.loads(remote_state.read_text(encoding="utf-8"))
     for key, value in current_resume_contract().items():
         assert saved.get(key) == value, f"لا يستأنف التدريب: اختلاف {key}."
-    assert saved.get("last_pt_sha256") == sha256_file(DRIVE_LAST_PT), "تلف أو تبدل last.pt في Drive."
-    assert json.loads(DRIVE_CONTRACT_JSON.read_text(encoding="utf-8"))["class_map_sha256"] == DATA_CONTRACT["class_map_sha256"]
+    assert saved.get("last_pt_sha256") == sha256_file(remote_last), "تلف أو تبدل last.pt في GitHub."
+    assert json.loads(remote_contract.read_text(encoding="utf-8"))["class_map_sha256"] == DATA_CONTRACT["class_map_sha256"]
+    atomic_copy(remote_last, LOCAL_LAST_PT)
+    atomic_copy(remote_contract, LOCAL_CONTRACT_JSON)
+    if (CHECKPOINT_EXPERIMENT_DIR / "results.csv").is_file():
+        atomic_copy(CHECKPOINT_EXPERIMENT_DIR / "results.csv", LOCAL_RESULTS_CSV)
+    atomic_json(LOCAL_STATE_JSON, saved)
+    print(f"استُعيد checkpoint epoch {saved['saved_after_epoch']} من GitHub/{CHECKPOINT_BRANCH}.")
+    return True
+
+def assert_resume_is_compatible():
+    assert LOCAL_LAST_PT.is_file() and LOCAL_STATE_JSON.is_file() and LOCAL_CONTRACT_JSON.is_file()
+    saved = json.loads(LOCAL_STATE_JSON.read_text(encoding="utf-8"))
+    for key, value in current_resume_contract().items():
+        assert saved.get(key) == value, f"لا يستأنف التدريب: اختلاف {key}."
+    assert saved.get("last_pt_sha256") == sha256_file(LOCAL_LAST_PT), "تلف أو تبدل last.pt المحلي."
+    assert json.loads(LOCAL_CONTRACT_JSON.read_text(encoding="utf-8"))["class_map_sha256"] == DATA_CONTRACT["class_map_sha256"]
 `, "checkpoint-tools"),
 
-  markdown("workspace-handoff", `
-## نسخ احتياطي قابل للاستئناف بين جلسات وحسابات Colab
+  markdown("github-handoff", `
+## الاستئناف البسيط من GitHub
 
-خلية النسخ تنشئ مرآة قابلة للاستئناف في Google Drive داخل المسار "OldPermicOCRLab/workspace_backup". تنسخ مساحة العمل التي تضم dataset/cache وruns، وتنسخ حالة التدريب، ثم تكتب manifest فقط بعد اكتمال النسختين. لا ترفع هذه الملفات إلى GitHub ولا تجعل Drive عامًا تلقائيًا.
+لا يربط الدفتر Google Drive ولا ينقل dataset أو cache بين الحسابات. عند تشغيل خلية التدريب، تفحص تلقائيًا فرع "colab-checkpoints". إن وجدت فيه نقطة حفظ متوافقة مع المرحلة والعقد الحاليين، تنسخ "last.pt" وmetadata فقط إلى القرص المؤقت وتتابع التدريب؛ وإلا تبدأ baseline جديدًا.
 
-عند الانتقال إلى حساب آخر، انقل أو نزّل مجلد "workspace_backup" إلى Drive الحساب الجديد أو إلى قرص Colab المؤقت، ثم اضبط "RESTORE_SOURCE_ROOT" في خلية الاسترجاع وشغّلها قبل خلية التوليد. تتحقق الخلية من manifest وتعيد checkout إلى commit المطابق قبل متابعة التدريب من "last.pt".
-
-إذا شاركت مجلد Drive عام، توجد خلية مستقلة تقبل رابط المجلد الأعلى وتستخدم Google Drive API بحساب Colab الحالي لتنزيل المجلد الفرعي "workspace_cache" تدريجيًا إلى القرص المؤقت. لا تستخدم هذه الخلية gdown ولا تتوقف عند أول 50 ملفًا؛ وتتحقق من resume_state وlast.pt وmanifest قبل أن تسمح بالاستئناف.
-`, "workspace-handoff"),
+يحفظ GitHub **آخر snapshot فقط** في الفرع المخصص، عبر تعديل commit نفسه ثم الدفع بـ"--force-with-lease" بعد كل epoch. هكذا يبقى الاستئناف ممكنًا من أي حساب Colab بلا تراكم تاريخ وزن كبير، لكن لا توجد نسخ epoch تاريخية منفصلة. لا تبدأ جلستين تدفعان إلى التجربة نفسها في الوقت نفسه.
+`, "github-handoff"),
 
   code("backup-workspace-to-drive", `
 # 9a) نسخ workspace إلى Drive. اجعل القيمة True عند الحاجة فقط؛ لا تشغّلها تلقائيًا مع Run all.
@@ -618,12 +700,15 @@ else:
 `, "restore-public-drive-folder"),
 
   code("training-run", `
-# 10) التدريب أو الاستئناف. يحفظ Ultralytics كل epoch ثم تنسخ callback آخر حالة إلى Drive.
+# 10) التدريب أو الاستئناف. تحفَظ آخر حالة إلى GitHub بعد كل epoch.
 from ultralytics import YOLO
 
-if DRIVE_LAST_PT.is_file() and DRIVE_STATE_JSON.is_file() and DRIVE_CONTRACT_JSON.is_file():
+RESTORE_LATEST_GITHUB_CHECKPOINT = True
+restored_checkpoint = RESTORE_LATEST_GITHUB_CHECKPOINT and restore_latest_checkpoint_from_github()
+
+if restored_checkpoint:
     assert_resume_is_compatible()
-    model = YOLO(str(DRIVE_LAST_PT))
+    model = YOLO(str(LOCAL_LAST_PT))
     model.add_callback("on_model_save", sync_latest_checkpoint)
     results = model.train(resume=True)
 else:
@@ -724,7 +809,7 @@ print(json.dumps(RELEASE, ensure_ascii=False, indent=2))
   markdown("publishing-gate", `
 ## بوابة النشر إلى GitHub
 
-النشر **مغلق افتراضيًا**. عند تفعيله، تنشر الخلية وصف الإصدار، القياسات، العقد، خريطة الفئات، عددًا محدودًا من صور المعاينة، ووزنًا فقط إذا كان أصغر من الحد المحدد. لا تنشر dataset أو "last.pt" أو ملفات Drive أو token. تحاول الخلية أولًا الدفع بجلسة GitHub المصرح بها في Colab. إن تطلبت shell مصادقة منفصلة، فعّل بديل Colab Secret باسم "GITHUB_WRITE_TOKEN" بصلاحية **Contents: Write** للمستودع نفسه فقط.
+النشر **مغلق افتراضيًا**. أما فرع "colab-checkpoints" فيُحدَّث تلقائيًا أثناء التدريب بآخر "last.pt" وبيانات الاستئناف فقط. عند تفعيل هذه الخلية، تنشر وصف إصدار مكتمل ومراجع: القياسات، العقد، خريطة الفئات، عددًا محدودًا من صور المعاينة، ووزنًا فقط إذا كان أصغر من الحد المحدد. لا تنشر dataset أو token. تحاول الخلية أولًا الدفع بجلسة GitHub المصرح بها في Colab. إن تطلبت shell مصادقة منفصلة، فعّل بديل Colab Secret باسم "GITHUB_WRITE_TOKEN" بصلاحية **Contents: Write** للمستودع نفسه فقط.
 `, "publishing-gate"),
 
   code("publish-release", `
@@ -824,8 +909,13 @@ prediction.show()
 `, "handoff"),
 ];
 
+const removedDriveCells = new Set([
+  "backup-workspace-to-drive",
+  "restore-workspace-from-drive",
+  "restore-public-drive-folder",
+]);
 const notebook = {
-  cells,
+  cells: cells.filter((cell) => !removedDriveCells.has(cell.id)),
   metadata: {
     kernelspec: { display_name: "Python 3 (Colab)", language: "python", name: "python3" },
     language_info: { name: "python", version: "3.11" },

@@ -17,7 +17,7 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("torch.cuda.is_available()");
     expect(code).toContain('"Pillow==11.3.0"');
     expect(code).toContain("import PIL");
-    expect(code).toContain("# 9) أدوات حفظ ذري واستئناف متحقق منه");
+    expect(code).toContain("# 9) أدوات حفظ ذري واستئناف متحقق منه من GitHub");
     expect(code).toContain("import os");
     expect(code).toContain("FORCE_REGENERATE_DATASET = False");
   });
@@ -28,21 +28,16 @@ describe("synthetic generation notebook", () => {
     const code = notebook.cells.filter((cell) => cell.cell_type === "code").flatMap((cell) => cell.source).join("\n");
     const prose = notebook.cells.filter((cell) => cell.cell_type === "markdown").flatMap((cell) => cell.source).join("\n");
 
-    expect(code).toContain("from google.colab import drive");
     expect(code).toContain('"git", "clone"');
+    expect(code).toContain('CHECKPOINT_BRANCH = "colab-checkpoints"');
+    expect(code).toContain("publish_latest_checkpoint");
+    expect(code).toContain("restore_latest_checkpoint_from_github");
+    expect(code).toContain("--force-with-lease");
     expect(code).toContain("USE_COLAB_SECRET_FALLBACK = False");
     expect(code).toContain('userdata.get("GITHUB_WRITE_TOKEN")');
     expect(code).toContain("sync_latest_checkpoint");
     expect(code).toContain("assert_resume_is_compatible");
-    expect(code).toContain("RUN_WORKSPACE_BACKUP = False");
-    expect(code).toContain("RESTORE_WORKSPACE_FROM_BACKUP = False");
-    expect(code).toContain("DOWNLOAD_PUBLIC_DRIVE_BACKUP = False");
-    expect(code).toContain("PUBLIC_DRIVE_FOLDER_URL");
-    expect(code).toContain("auth.authenticate_user()");
-    expect(code).toContain("MediaIoBaseDownload");
     expect(code).toContain("last_pt_sha256");
-    expect(code).toContain("latest_backup.json");
-    expect(code).toContain("ALLOW_WORKSPACE_REPLACE = False");
     expect(code).toContain("save_period=1");
     expect(code).toContain("evaluation_model.val");
     expect(code).toContain("release.json");
@@ -51,7 +46,12 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain('"latest.json"');
     expect(code).toContain('"publication_status": "published"');
     expect(code).not.toContain("github_read_token");
+    expect(code).not.toContain("from google.colab import drive");
+    expect(code).not.toContain("restore-public-drive-folder");
+    expect(code).not.toContain("RUN_WORKSPACE_BACKUP");
+    expect(code).not.toContain("workspace_cache");
     expect(prose).toContain("لا تُرفع");
+    expect(prose).toContain("لا يربط الدفتر Google Drive");
     expect(prose).toContain("لا تثبت أداء OCR على مخطوطات تاريخية");
   });
 });
