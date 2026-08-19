@@ -183,19 +183,27 @@ print(json.dumps({"stage": STAGE, "output": str(DATASET_ROOT), **GENERATION}, en
 `, "generation-config"),
 
   code("generate-and-validate", `
-# 5) التوليد الحتمي ثم تحقق مستقل. تعيد الدالة بناء مجلد المرحلة، فلا تشغّلها فوق تجربة تريد الاحتفاظ بها.
-manifest = write_dataset(
-    output_dir=DATASET_ROOT,
-    profile=PROFILES[GENERATION["profile"]],
-    samples=GENERATION["samples"],
-    seed=GENERATION["seed"],
-    image_size=GENERATION["image_size"],
-    font_size=GENERATION["font_size"],
-    font_path=FONT_PATH,
-    layout=GENERATION["layout"],
-    balanced_classes=GENERATION["balanced_classes"],
-    workers=GENERATION["workers"],
-)
+# 5) التوليد الحتمي أو إعادة استعمال cache مستعاد ثم تحقق مستقل.
+# لا تفعّل FORCE_REGENERATE_DATASET فوق cache تريد الاحتفاظ بها أو استرجاعها.
+FORCE_REGENERATE_DATASET = False
+CACHED_MANIFEST_PATH = DATASET_ROOT / "manifest.json"
+
+if CACHED_MANIFEST_PATH.is_file() and not FORCE_REGENERATE_DATASET:
+    manifest = json.loads(CACHED_MANIFEST_PATH.read_text(encoding="utf-8"))
+    print("استعمال cache مرحلة مستعاد/موجود:", DATASET_ROOT)
+else:
+    manifest = write_dataset(
+        output_dir=DATASET_ROOT,
+        profile=PROFILES[GENERATION["profile"]],
+        samples=GENERATION["samples"],
+        seed=GENERATION["seed"],
+        image_size=GENERATION["image_size"],
+        font_size=GENERATION["font_size"],
+        font_path=FONT_PATH,
+        layout=GENERATION["layout"],
+        balanced_classes=GENERATION["balanced_classes"],
+        workers=GENERATION["workers"],
+    )
 subprocess.run([sys.executable, str(VALIDATOR_PATH), str(DATASET_ROOT)], check=True)
 print(json.dumps(manifest, ensure_ascii=False, indent=2))
 `, "generate-validate"),
@@ -313,6 +321,8 @@ print(json.dumps({"experiment": EXPERIMENT_NAME, "epochs": EPOCHS, "imgsz": IMAG
 
   code("checkpoint-tools", `
 # 9) أدوات حفظ ذري واستئناف متحقق منه. لا تحفظ token في هذه الملفات.
+import os
+
 def atomic_copy(source, destination):
     source, destination = Path(source), Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -365,6 +375,126 @@ def assert_resume_is_compatible():
     assert saved.get("last_pt_sha256") == sha256_file(DRIVE_LAST_PT), "تلف أو تبدل last.pt في Drive."
     assert json.loads(DRIVE_CONTRACT_JSON.read_text(encoding="utf-8"))["class_map_sha256"] == DATA_CONTRACT["class_map_sha256"]
 `, "checkpoint-tools"),
+
+  markdown("workspace-handoff", `
+## نسخ احتياطي قابل للاستئناف بين جلسات وحسابات Colab
+
+خلية النسخ تنشئ مرآة قابلة للاستئناف في Google Drive داخل المسار "OldPermicOCRLab/workspace_backup". تنسخ مساحة العمل التي تضم dataset/cache وruns، وتنسخ حالة التدريب، ثم تكتب manifest فقط بعد اكتمال النسختين. لا ترفع هذه الملفات إلى GitHub ولا تجعل Drive عامًا تلقائيًا.
+
+عند الانتقال إلى حساب آخر، انقل أو نزّل مجلد "workspace_backup" إلى Drive الحساب الجديد أو إلى قرص Colab المؤقت، ثم اضبط "RESTORE_SOURCE_ROOT" في خلية الاسترجاع وشغّلها قبل خلية التوليد. تتحقق الخلية من manifest وتعيد checkout إلى commit المطابق قبل متابعة التدريب من "last.pt".
+`, "workspace-handoff"),
+
+  code("backup-workspace-to-drive", `
+# 9a) نسخ workspace إلى Drive. اجعل القيمة True عند الحاجة فقط؛ لا تشغّلها تلقائيًا مع Run all.
+RUN_WORKSPACE_BACKUP = False
+BACKUP_ROOT = DRIVE_ROOT / "workspace_backup"
+BACKUP_PAYLOAD_ROOT = BACKUP_ROOT / "payload"
+BACKUP_WORKSPACE_ROOT = BACKUP_PAYLOAD_ROOT / "old-permic-ocr-workspace"
+BACKUP_STATE_ROOT = BACKUP_PAYLOAD_ROOT / "training_state"
+BACKUP_MANIFEST_PATH = BACKUP_ROOT / "latest_backup.json"
+BACKUP_LOCK_PATH = BACKUP_ROOT / ".backup-in-progress"
+
+def rsync_tree(source, destination):
+    source, destination = Path(source), Path(destination)
+    assert source.is_dir(), f"لا يوجد مصدر للنسخ: {source}"
+    destination.mkdir(parents=True, exist_ok=True)
+    subprocess.run([
+        "rsync", "-a", "--partial", "--human-readable", "--info=progress2",
+        "--exclude=*.part", "--exclude=*.tmp", "--exclude=__pycache__",
+        f"{source}/", f"{destination}/",
+    ], check=True)
+
+def tree_summary(root):
+    root = Path(root)
+    file_count, total_bytes = 0, 0
+    for path in root.rglob("*"):
+        if path.is_file():
+            file_count += 1
+            total_bytes += path.stat().st_size
+    return {"relative_root": root.name, "file_count": file_count, "bytes": total_bytes}
+
+def optional_fingerprint(path):
+    path = Path(path)
+    if not path.is_file():
+        return None
+    return {"sha256": sha256_file(path), "bytes": path.stat().st_size}
+
+if RUN_WORKSPACE_BACKUP:
+    BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    if BACKUP_LOCK_PATH.exists():
+        raise RuntimeError(f"يوجد نسخ احتياطي جارٍ أو متوقف: {BACKUP_LOCK_PATH}")
+    BACKUP_LOCK_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    try:
+        rsync_tree(WORKSPACE, BACKUP_WORKSPACE_ROOT)
+        rsync_tree(DRIVE_STATE_ROOT, BACKUP_STATE_ROOT)
+        backup_manifest = {
+            "schema_version": 1,
+            "status": "complete",
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "source_commit": SOURCE_COMMIT,
+            "stage": STAGE,
+            "payload": {
+                "workspace": "payload/old-permic-ocr-workspace",
+                "training_state": "payload/training_state",
+            },
+            "workspace": tree_summary(BACKUP_WORKSPACE_ROOT),
+            "training_state": tree_summary(BACKUP_STATE_ROOT),
+            "critical_files": {
+                "dataset_manifest": optional_fingerprint(DATASET_ROOT / "manifest.json"),
+                "dataset_contract": optional_fingerprint(CONTRACT_PATH),
+                "last_pt": optional_fingerprint(DRIVE_LAST_PT),
+                "resume_state": optional_fingerprint(DRIVE_STATE_JSON),
+            },
+        }
+        atomic_json(BACKUP_MANIFEST_PATH, backup_manifest)
+        print(json.dumps(backup_manifest, ensure_ascii=False, indent=2))
+        print("اكتملت المرآة. يمكن إعادة تشغيل الخلية لاحقًا؛ rsync يعيد استعمال الملفات المكتملة.")
+    finally:
+        BACKUP_LOCK_PATH.unlink(missing_ok=True)
+else:
+    print("النسخ الاحتياطي مغلق. غيّر RUN_WORKSPACE_BACKUP إلى True عند الحاجة.")
+`, "backup-workspace-to-drive"),
+
+  code("restore-workspace-from-drive", `
+# 9b) استرجاع workspace على حساب/جهاز آخر قبل التوليد والتدريب.
+# غيّر RESTORE_SOURCE_ROOT إذا نزّلت workspace_backup إلى مسار مؤقت من Drive مشترك.
+RESTORE_WORKSPACE_FROM_BACKUP = False
+RESTORE_SOURCE_ROOT = DRIVE_ROOT / "workspace_backup"
+ALLOW_WORKSPACE_REPLACE = False
+
+if RESTORE_WORKSPACE_FROM_BACKUP:
+    restore_root = Path(RESTORE_SOURCE_ROOT)
+    restore_manifest_path = restore_root / "latest_backup.json"
+    assert restore_manifest_path.is_file(), f"لا يوجد manifest للاسترجاع: {restore_manifest_path}"
+    restore_manifest = json.loads(restore_manifest_path.read_text(encoding="utf-8"))
+    assert restore_manifest.get("status") == "complete", "لا يجوز استرجاع نسخة غير مكتملة."
+    payload = restore_manifest["payload"]
+    backup_workspace = restore_root / payload["workspace"]
+    backup_state = restore_root / payload["training_state"]
+    assert backup_workspace.is_dir() and backup_state.is_dir(), "محتوى النسخة الاحتياطية ناقص."
+
+    if WORKSPACE.exists() and any(WORKSPACE.iterdir()):
+        assert ALLOW_WORKSPACE_REPLACE, "Workspace الحالي غير فارغ. راجعه ثم غيّر ALLOW_WORKSPACE_REPLACE إلى True للاستبدال."
+        shutil.rmtree(WORKSPACE)
+    WORKSPACE.mkdir(parents=True, exist_ok=True)
+    rsync_tree(backup_workspace, WORKSPACE)
+    if backup_state.resolve() != DRIVE_STATE_ROOT.resolve():
+        rsync_tree(backup_state, DRIVE_STATE_ROOT)
+
+    backup_commit = restore_manifest.get("source_commit")
+    if backup_commit and backup_commit != SOURCE_COMMIT:
+        subprocess.run(["git", "-C", str(PROJECT_ROOT), "fetch", "--depth", "1", "origin", backup_commit], check=True)
+        subprocess.run(["git", "-C", str(PROJECT_ROOT), "checkout", "--detach", backup_commit], check=True)
+        SOURCE_COMMIT = subprocess.check_output(["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"], text=True).strip()
+    restored_manifest = WORKSPACE / "synthetic" / restore_manifest["stage"] / "manifest.json"
+    expected = restore_manifest.get("critical_files", {}).get("dataset_manifest")
+    assert restored_manifest.is_file(), f"لم يستعد manifest البيانات: {restored_manifest}"
+    if expected:
+        assert sha256_file(restored_manifest) == expected["sha256"], "بصمة manifest المستعاد لا تطابق النسخة الاحتياطية."
+    print(json.dumps({"restored_stage": restore_manifest["stage"], "source_commit": SOURCE_COMMIT, "workspace": str(WORKSPACE)}, ensure_ascii=False, indent=2))
+else:
+    print("الاسترجاع مغلق. على حساب جديد اضبط RESTORE_WORKSPACE_FROM_BACKUP=True قبل التوليد.")
+`, "restore-workspace-from-drive"),
 
   code("training-run", `
 # 10) التدريب أو الاستئناف. يحفظ Ultralytics كل epoch ثم تنسخ callback آخر حالة إلى Drive.

@@ -17,6 +17,9 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("torch.cuda.is_available()");
     expect(code).toContain('"Pillow==11.3.0"');
     expect(code).toContain("import PIL");
+    expect(code).toContain("# 9) أدوات حفظ ذري واستئناف متحقق منه");
+    expect(code).toContain("import os");
+    expect(code).toContain("FORCE_REGENERATE_DATASET = False");
   });
 
   it("keeps the Colab checkpoint, evaluation, and gated publication workflow explicit", () => {
@@ -31,6 +34,10 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain('userdata.get("GITHUB_WRITE_TOKEN")');
     expect(code).toContain("sync_latest_checkpoint");
     expect(code).toContain("assert_resume_is_compatible");
+    expect(code).toContain("RUN_WORKSPACE_BACKUP = False");
+    expect(code).toContain("RESTORE_WORKSPACE_FROM_BACKUP = False");
+    expect(code).toContain("latest_backup.json");
+    expect(code).toContain("ALLOW_WORKSPACE_REPLACE = False");
     expect(code).toContain("save_period=1");
     expect(code).toContain("evaluation_model.val");
     expect(code).toContain("release.json");

@@ -20,6 +20,35 @@
 
 لا تدمج S0 وS0-d1 تلقائيًا. شغّل S0-d1 كتجربة مستقلة بعد تسجيل خط أساس S0، ثم طبق المنهج ذاته على S1 وS2. التدرج تنظيم بصري وتعليمي؛ تبقى وحدة التدريب والتوسيم **حرفًا** لا كلمة ولا معجمًا.
 
+## نسخ مساحة العمل واسترجاعها بين جلسات Colab
+
+يوجد في الدفتر بعد أدوات checkpoint خليتان يدويتان لا تعملان ضمن التسلسل المعتاد: `backup-workspace-to-drive` و`restore-workspace-from-drive`. تضع خلية النسخ مرآة قابلة للاستئناف في المسار التالي، ولا تكتب `latest_backup.json` إلا بعد انتهاء نسخ مساحة العمل وحالة التدريب.
+
+```text
+/content/drive/MyDrive/OldPermicOCRLab/workspace_backup/
+├── latest_backup.json
+└── payload/
+    ├── old-permic-ocr-workspace/  # synthetic cache وruns
+    └── training_state/            # last.pt وresume_state وresults.csv
+```
+
+لتنفيذ نسخ فوري من **Terminal** أثناء التدريب، مع إمكان إعادة نفس الأمر بعد الانقطاع، استخدم الآتي. لا يحذف هذا الأمر أي ملف في Drive؛ ويستبعد الملفات المؤقتة غير المكتملة فقط.
+
+```bash
+mkdir -p /content/drive/MyDrive/OldPermicOCRLab/workspace_cache/{workspace,training_state} && \
+rsync -a --partial --append-verify --info=progress2 \
+  --exclude='*.part' --exclude='*.tmp' \
+  /content/old-permic-ocr-workspace/ \
+  /content/drive/MyDrive/OldPermicOCRLab/workspace_cache/workspace/ && \
+rsync -a --partial --append-verify --info=progress2 \
+  /content/drive/MyDrive/OldPermicOCRLab/training_state/ \
+  /content/drive/MyDrive/OldPermicOCRLab/workspace_cache/training_state/
+```
+
+عند العمل من حساب أو جهاز آخر، انقل مجلد `workspace_backup` أو `workspace_cache` إلى Drive الحساب الجديد أو نزّله إلى قرص Colab. في حالة `workspace_backup` اضبط `RESTORE_SOURCE_ROOT` على مساره، ثم اجعل `RESTORE_WORKSPACE_FROM_BACKUP = True` وشغّل خلية الاسترجاع قبل خلية التوليد. إذا كان cache مستعادًا، اترك `FORCE_REGENERATE_DATASET = False`؛ سيتحقق الدفتر منه بدل مسحه وإعادة توليده. إذا كان `source_commit` للنسخة مختلفًا، تعيد خلية الاسترجاع المشروع تلقائيًا إلى commit المطابق قبل أن تسمح لآلية الاستئناف بالتحقق من `last.pt`.
+
+> لا تجعل Drive عامًا إلا إذا كنت تقبل أن يتمكن كل من يملك الرابط من تنزيل البيانات والوزن. لا توجد حاجة لجعل النسخة عامة عند النقل بين حسابات تملكها؛ مشاركة المجلد مباشرة أو إضافته كاختصار في Drive الحساب الثاني أقل تعرضًا.
+
 ## كيف يعمل الإصدار المنشور
 
 | الملف | دوره | شرط قبول الموقع |
