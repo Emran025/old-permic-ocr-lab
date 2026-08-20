@@ -6,7 +6,7 @@ import { ExternalLink, FileCode2, NotebookTabs, RefreshCw, ServerCog, ShieldChec
 
 const notebookPath = "training/notebooks/old_permic_synthetic_generation.ipynb";
 const githubNotebookUrl = `https://github.com/Emran025/old-permic-ocr-lab/blob/main/${notebookPath}`;
-const renderedNotebookUrl = "/manus-storage/old-permic-synthetic-generation-notebook_c7f5feed.html";
+const renderedNotebookUrl = "/manus-storage/old-permic-synthetic-generation-notebook_399a6ec1.html";
 
 function timestamp(value: unknown) {
   if (!value) return "لم يُسجل بعد";

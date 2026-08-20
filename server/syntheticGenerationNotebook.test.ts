@@ -47,6 +47,8 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("save_period=1");
     expect(code).toContain("dataset_snapshot.json");
     expect(code).toContain("GITHUB_WRITE_TOKEN");
+    expect(code).toContain("legacy_checkpoint");
+    expect(code).toContain("قُبل اختلاف manifest بعد تحقق الفئات وسجل الأصول وهوية snapshot");
     expect(code).toContain("evaluation_model.val");
     expect(code).toContain("release.json");
     expect(code).toContain("PUBLISH_RELEASE = False");

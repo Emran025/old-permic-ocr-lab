@@ -572,14 +572,23 @@ def restore_latest_checkpoint_from_github():
     if not (remote_state.is_file() and remote_last.is_file() and remote_contract.is_file()):
         return False
     saved = json.loads(remote_state.read_text(encoding="utf-8"))
+    legacy_checkpoint = saved.get("schema_version", saved.get("contract_version", 1)) == 1
     for key, value in current_resume_contract().items():
-        if key == "schema_version" and saved.get(key, 1) == 1:
-            continue  # يسمح بترحيل checkpoint القديم مرة واحدة إلى snapshot v2.
+        if legacy_checkpoint and key in ("schema_version", "manifest_sha256"):
+            continue  # manifest يضم metadata متغيرًا؛ تتحقق أدناه هوية snapshot الفعلية بدلًا منه.
         assert saved.get(key) == value, f"لا يستأنف التدريب: اختلاف {key}."
     assert saved.get("last_pt_sha256") == sha256_file(remote_last), "تلف أو تبدل last.pt في GitHub."
     remote_data_contract = json.loads(remote_contract.read_text(encoding="utf-8"))
-    for key in ("class_map_sha256", "manifest_sha256", "assets_sha256"):
+    for key in ("class_map_sha256", "assets_sha256"):
         assert remote_data_contract.get(key) == DATA_CONTRACT[key], f"عقد البيانات المستعاد يختلف في {key}."
+    if remote_data_contract.get("manifest_sha256") != DATA_CONTRACT["manifest_sha256"]:
+        assert legacy_checkpoint, "اختلاف manifest في checkpoint حديث يمنع الاستئناف."
+        snapshot_meta = json.loads(CHECKPOINT_DATASET_META.read_text(encoding="utf-8"))
+        assert snapshot_meta.get("identity") == SNAPSHOT_IDENTITY, "هوية snapshot البيانات لا تطابق التجربة القديمة."
+        assert snapshot_meta.get("class_map_sha256") == DATA_CONTRACT["class_map_sha256"]
+        assert snapshot_meta.get("assets_sha256") == DATA_CONTRACT["assets_sha256"]
+        assert snapshot_meta.get("manifest_sha256") == DATA_CONTRACT["manifest_sha256"]
+        print("ترحيل checkpoint v1: قُبل اختلاف manifest بعد تحقق الفئات وسجل الأصول وهوية snapshot.")
     atomic_copy(remote_last, LOCAL_LAST_PT)
     atomic_copy(remote_contract, LOCAL_CONTRACT_JSON)
     if (CHECKPOINT_EXPERIMENT_DIR / "results.csv").is_file():
