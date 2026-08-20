@@ -102,3 +102,4 @@
 - [x] تبسيط دفتر Colab بإزالة مزامنة واسترجاع Google Drive واعتماد GitHub فقط لحفظ checkpoint وملفات الاستئناف بعد كل epoch.
 - [ ] تشغيل baseline S0 الفعلي من دفتر GitHub-only والتحقق من ظهور أول checkpoint موثق في فرع colab-checkpoints.
 - [x] ضبط baseline S0 لاستهلاك ذاكرة T4 بصورة أعلى عبر batch متدرج وإعدادات DataLoader ملائمة، مع مسار رجوع آمن عند نفاد الذاكرة.
+- [x] تعديل مسار Colab ليحفظ snapshot قابلًا للاستئناف في GitHub يتضمن بيانات S0 الصناعية وlast.pt وmetadata، ثم يستعيده ويتحقق منه قبل استئناف كل جلسة.

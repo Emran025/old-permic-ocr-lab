@@ -6,7 +6,7 @@ import { ExternalLink, FileCode2, NotebookTabs, RefreshCw, ServerCog, ShieldChec
 
 const notebookPath = "training/notebooks/old_permic_synthetic_generation.ipynb";
 const githubNotebookUrl = `https://github.com/Emran025/old-permic-ocr-lab/blob/main/${notebookPath}`;
-const renderedNotebookUrl = "/manus-storage/old-permic-synthetic-generation-notebook_18f0109e.html";
+const renderedNotebookUrl = "/manus-storage/old-permic-synthetic-generation-notebook_c7f5feed.html";
 
 function timestamp(value: unknown) {
   if (!value) return "لم يُسجل بعد";
@@ -41,7 +41,7 @@ export default function GeneratorNotebook() {
           <div>
             <p className="text-xs font-semibold tracking-[0.18em] text-[#a56b37]">JUPYTER NOTEBOOK · COLAB SOURCE OF TRUTH</p>
             <h1 className="mt-3 font-serif text-4xl tracking-tight text-[#24372e] sm:text-5xl">دفتر التوليد والتدريب</h1>
-            <p className="mt-4 max-w-3xl text-sm leading-8 text-[#62675e]">هذا عارض HTML قياسي مولد من دفتر Jupyter الحقيقي، لا تمثيل يدوي لخلايا الكود. يعرض مسار Colab المتدرج: التوليد الحرفي، التحقق، تدريب S0 بحجم batch متدرج، حفظ أحدث checkpoint إلى GitHub بعد كل epoch، ثم التقييم وإصدار نتائج موثق.</p>
+            <p className="mt-4 max-w-3xl text-sm leading-8 text-[#62675e]">هذا عارض HTML قياسي مولد من دفتر Jupyter الحقيقي، لا تمثيل يدوي لخلايا الكود. يعرض مسار Colab المتدرج: استعادة أو توليد بيانات S0، التحقق، تدريب بحجم batch متدرج، وحفظ snapshot كامل قابل للاستئناف في GitHub ثم التقييم وإصدار نتائج موثق.</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <a href={githubNotebookUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-[#c7d3c4] bg-white px-4 py-3 text-sm font-semibold text-[#2b4b40] transition hover:bg-[#f1f7ef]"><FileCode2 className="size-4" />فتح ملف IPYNB</a>

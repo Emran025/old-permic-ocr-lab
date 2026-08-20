@@ -160,19 +160,19 @@ from training.synthetic.generate_old_permic_synthetic import PROFILES, write_dat
 CURRICULUM = {
     "S0": {
         "profile": "unicode-clean", "layout": "isolated-glyph", "samples": 7600,
-        "seed": 10350, "image_size": 640, "font_size": 58, "balanced_classes": True, "workers": 6,
+        "seed": 10350, "image_size": 640, "font_size": 48, "balanced_classes": True, "workers": 6,
     },
     "S0-d1": {
         "profile": "controlled-deformation", "layout": "isolated-glyph", "samples": 7600,
-        "seed": 20350, "image_size": 640, "font_size": 58, "balanced_classes": True, "workers": 6,
+        "seed": 20350, "image_size": 640, "font_size": 48, "balanced_classes": True, "workers": 6,
     },
     "S1": {
         "profile": "manuscript-inspired", "layout": "ordered-lines", "samples": 1000,
-        "seed": 30350, "image_size": 640, "font_size": 46, "balanced_classes": False, "workers": 2,
+        "seed": 30350, "image_size": 640, "font_size": 38, "balanced_classes": False, "workers": 2,
     },
     "S2": {
         "profile": "manuscript-inspired", "layout": "structured-pages", "samples": 600,
-        "seed": 40350, "image_size": 640, "font_size": 38, "balanced_classes": False, "workers": 2,
+        "seed": 40350, "image_size": 640, "font_size": 28, "balanced_classes": False, "workers": 2,
     },
 }
 
@@ -180,8 +180,60 @@ STAGE = "S0"  # غيّرها يدويًا بعد قبول المرحلة الس�
 assert STAGE in CURRICULUM
 GENERATION = CURRICULUM[STAGE]
 DATASET_ROOT = WORKSPACE / "synthetic" / STAGE
+EXPERIMENT_NAME = f"old_permic_{STAGE.lower().replace('-', '_')}_baseline_v2_batch8"
+CHECKPOINT_ROOT_NAME = "checkpoints"
+SNAPSHOT_SCHEMA_VERSION = 2
+SNAPSHOT_IDENTITY = {
+    "schema_version": SNAPSHOT_SCHEMA_VERSION,
+    "experiment_name": EXPERIMENT_NAME,
+    "stage": STAGE,
+    "generation": GENERATION,
+    "font_sha256": FONT_SHA256,
+    "generator_sha256": sha256_file(GENERATOR_PATH),
+}
 print(json.dumps({"stage": STAGE, "output": str(DATASET_ROOT), **GENERATION}, ensure_ascii=False, indent=2))
 `, "generation-config"),
+
+  code("restore-dataset-snapshot", `
+# 4a) استعادة snapshot البيانات قبل التوليد. القراءة عامة؛ لا تحتاج token.
+# إذا لم يوجد snapshot متوافق، ستنشئ الخلية التالية البيانات حتميًا للمرة الأولى.
+SNAPSHOT_RESTORED_FROM_GITHUB = False
+
+def clone_checkpoint_branch_readonly():
+    if CHECKPOINT_REPO.exists():
+        shutil.rmtree(CHECKPOINT_REPO)
+    probe = subprocess.run(["git", "ls-remote", "--heads", REPO_URL, CHECKPOINT_BRANCH], text=True, capture_output=True)
+    if not probe.stdout.strip():
+        print("لا يوجد فرع checkpoint بعد؛ ستنشأ أول snapshot بعد أول epoch.")
+        return False
+    subprocess.run(["git", "clone", "--depth", "1", "--branch", CHECKPOINT_BRANCH, REPO_URL, str(CHECKPOINT_REPO)], check=True)
+    return True
+
+def atomic_copytree(source, destination):
+    source, destination = Path(source), Path(destination)
+    temporary = destination.with_name(destination.name + ".restore-part")
+    if temporary.exists():
+        shutil.rmtree(temporary)
+    shutil.copytree(source, temporary, ignore=shutil.ignore_patterns("*.cache", "*.part", "__pycache__"))
+    if destination.exists():
+        shutil.rmtree(destination)
+    os.replace(temporary, destination)
+
+if clone_checkpoint_branch_readonly():
+    SNAPSHOT_EXPERIMENT_DIR = CHECKPOINT_REPO / CHECKPOINT_ROOT_NAME / EXPERIMENT_NAME
+    SNAPSHOT_DATASET_DIR = SNAPSHOT_EXPERIMENT_DIR / "dataset"
+    SNAPSHOT_META_PATH = SNAPSHOT_EXPERIMENT_DIR / "dataset_snapshot.json"
+    if SNAPSHOT_DATASET_DIR.is_dir() and SNAPSHOT_META_PATH.is_file():
+        snapshot_meta = json.loads(SNAPSHOT_META_PATH.read_text(encoding="utf-8"))
+        assert snapshot_meta.get("identity") == SNAPSHOT_IDENTITY, (
+            "يوجد snapshot لكن هويته لا تطابق المرحلة أو المولد أو الخط الحالي؛ لا يستعاد تلقائيًا."
+        )
+        atomic_copytree(SNAPSHOT_DATASET_DIR, DATASET_ROOT)
+        SNAPSHOT_RESTORED_FROM_GITHUB = True
+        print(f"استُعيد snapshot بيانات {STAGE} من GitHub: {snapshot_meta['tree']['file_count']} ملفًا.")
+    else:
+        print("لا توجد بيانات snapshot متوافقة بعد؛ سيجري التوليد الحتمي المحلي.")
+`, "restore-dataset-snapshot"),
 
   code("generate-and-validate", `
 # 5) التوليد الحتمي أو إعادة استعمال cache مستعاد ثم تحقق مستقل.
@@ -330,12 +382,13 @@ print(json.dumps({
 `, "training-config"),
 
   code("checkpoint-tools", `
-# 9) أدوات حفظ ذري واستئناف متحقق منه من GitHub. لا تحفظ token في هذه الملفات.
-import os
+# 9) Snapshot كامل وقابل للاستئناف من GitHub. لا يكتب secret في ملف أو remote.
+from base64 import b64encode
 
-CHECKPOINT_USE_COLAB_SECRET_FALLBACK = True
-CHECKPOINT_ROOT = CHECKPOINT_REPO / "checkpoints"
+CHECKPOINT_ROOT = CHECKPOINT_REPO / CHECKPOINT_ROOT_NAME
 CHECKPOINT_EXPERIMENT_DIR = CHECKPOINT_ROOT / EXPERIMENT_NAME
+CHECKPOINT_DATASET_DIR = CHECKPOINT_EXPERIMENT_DIR / "dataset"
+CHECKPOINT_DATASET_META = CHECKPOINT_EXPERIMENT_DIR / "dataset_snapshot.json"
 
 def atomic_copy(source, destination):
     source, destination = Path(source), Path(destination)
@@ -352,11 +405,28 @@ def atomic_json(destination, payload):
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temporary, destination)
 
+def tree_summary(root):
+    files, total_bytes = 0, 0
+    for path in Path(root).rglob("*"):
+        if path.is_file() and path.suffix != ".cache":
+            files += 1
+            total_bytes += path.stat().st_size
+    return {"file_count": files, "bytes": total_bytes}
+
+def copy_dataset_snapshot(source, destination):
+    source, destination = Path(source), Path(destination)
+    temporary = destination.with_name(destination.name + ".snapshot-part")
+    if temporary.exists():
+        shutil.rmtree(temporary)
+    shutil.copytree(source, temporary, ignore=shutil.ignore_patterns("*.cache", "*.part", "__pycache__"))
+    if destination.exists():
+        shutil.rmtree(destination)
+    os.replace(temporary, destination)
+
 def current_resume_contract():
     return {
-        "contract_version": 1,
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "experiment_name": EXPERIMENT_NAME,
-        "source_commit": SOURCE_COMMIT,
         "stage": STAGE,
         "class_map_sha256": DATA_CONTRACT["class_map_sha256"],
         "manifest_sha256": DATA_CONTRACT["manifest_sha256"],
@@ -365,73 +435,108 @@ def current_resume_contract():
         "initialization": INITIALIZATION,
     }
 
-def git_output(arguments, *, check=True):
-    return subprocess.run(["git", *arguments], text=True, capture_output=True, check=check)
-
 def remote_checkpoint_branch_exists():
-    probe = git_output(["ls-remote", "--heads", REPO_URL, CHECKPOINT_BRANCH], check=False)
+    probe = subprocess.run(["git", "ls-remote", "--heads", REPO_URL, CHECKPOINT_BRANCH], text=True, capture_output=True)
     return bool(probe.stdout.strip())
 
 def ensure_checkpoint_repo():
-    if CHECKPOINT_REPO.exists() and (CHECKPOINT_REPO / ".git").exists():
-        return
-    if CHECKPOINT_REPO.exists():
-        shutil.rmtree(CHECKPOINT_REPO)
-    if remote_checkpoint_branch_exists():
-        subprocess.run(["git", "clone", "--depth", "1", "--branch", CHECKPOINT_BRANCH, REPO_URL, str(CHECKPOINT_REPO)], check=True)
-    else:
-        subprocess.run(["git", "clone", "--depth", "1", REPO_URL, str(CHECKPOINT_REPO)], check=True)
-        subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "switch", "--orphan", CHECKPOINT_BRANCH], check=True)
-        subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "rm", "-rf", "."], check=False)
+    if not (CHECKPOINT_REPO / ".git").is_dir():
+        if CHECKPOINT_REPO.exists():
+            shutil.rmtree(CHECKPOINT_REPO)
+        if remote_checkpoint_branch_exists():
+            subprocess.run(["git", "clone", "--depth", "1", "--branch", CHECKPOINT_BRANCH, REPO_URL, str(CHECKPOINT_REPO)], check=True)
+        else:
+            subprocess.run(["git", "clone", "--depth", "1", REPO_URL, str(CHECKPOINT_REPO)], check=True)
+            subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "switch", "--orphan", CHECKPOINT_BRANCH], check=True)
+            subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "rm", "-rf", "."], check=False)
     subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "config", "user.name", "Old Permic Colab"], check=True)
     subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "config", "user.email", "colab@local.invalid"], check=True)
 
+def github_write_header():
+    from google.colab import userdata
+    token = userdata.get("GITHUB_WRITE_TOKEN")
+    assert token, "يلزم Colab Secret باسم GITHUB_WRITE_TOKEN بصلاحية Contents: Write لحفظ كل epoch."
+    header = b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
+    del token
+    return f"AUTHORIZATION: basic {header}"
+
 def push_checkpoint_branch():
-    push = subprocess.run([
-        "git", "-C", str(CHECKPOINT_REPO), "push", "--set-upstream", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}"
-    ], text=True, capture_output=True)
-    if push.returncode != 0 and CHECKPOINT_USE_COLAB_SECRET_FALLBACK:
-        from base64 import b64encode
-        from google.colab import userdata
-        github_write_token = userdata.get("GITHUB_WRITE_TOKEN")
-        assert github_write_token, "تعذر الدفع التلقائي. أضف Colab Secret باسم GITHUB_WRITE_TOKEN بصلاحية Contents: Write ثم أعد تشغيل التدريب."
-        write_authorization = b64encode(f"x-access-token:{github_write_token}".encode("utf-8")).decode("ascii")
+    authorization = github_write_header()
+    try:
         push = subprocess.run([
-            "git", "-C", str(CHECKPOINT_REPO), "-c", f"http.extraHeader=AUTHORIZATION: basic {write_authorization}",
-            "push", "--set-upstream", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}"
+            "git", "-C", str(CHECKPOINT_REPO), "-c", f"http.extraHeader={authorization}",
+            "push", "--set-upstream", "--force-with-lease", "origin", f"HEAD:{CHECKPOINT_BRANCH}",
         ], text=True, capture_output=True)
-        del github_write_token, write_authorization
+    finally:
+        del authorization
     if push.returncode != 0:
-        raise RuntimeError(f"فشل دفع checkpoint إلى GitHub:\n{push.stderr}")
+        raise RuntimeError(
+            "فشل دفع snapshot إلى GitHub؛ لم يُخفَ الخطأ ولم يبدأ تدريب جديد. "
+            f"شغّل جلسة واحدة فقط للتجربة ثم أعد المحاولة.\n{push.stderr}"
+        )
+
+def ensure_dataset_snapshot():
+    if CHECKPOINT_DATASET_META.is_file() and CHECKPOINT_DATASET_DIR.is_dir():
+        meta = json.loads(CHECKPOINT_DATASET_META.read_text(encoding="utf-8"))
+        assert meta.get("identity") == SNAPSHOT_IDENTITY, "snapshot البيانات الموجود يخص إعدادًا مختلفًا."
+        return meta
+    copy_dataset_snapshot(DATASET_ROOT, CHECKPOINT_DATASET_DIR)
+    meta = {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "identity": SNAPSHOT_IDENTITY,
+        "tree": tree_summary(CHECKPOINT_DATASET_DIR),
+        "manifest_sha256": sha256_file(CHECKPOINT_DATASET_DIR / "manifest.json"),
+        "class_map_sha256": sha256_file(CHECKPOINT_DATASET_DIR / "class_map.json"),
+        "assets_sha256": sha256_file(CHECKPOINT_DATASET_DIR / "assets.jsonl"),
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    atomic_json(CHECKPOINT_DATASET_META, meta)
+    print(f"أُنشئ snapshot بيانات {STAGE}: {meta['tree']['file_count']} ملفًا، {meta['tree']['bytes']} بايت.")
+    return meta
+
+def commit_and_push_checkpoint_tree(message):
+    subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "add", CHECKPOINT_ROOT_NAME], check=True)
+    has_commit = subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "rev-parse", "--verify", "HEAD"], capture_output=True).returncode == 0
+    subprocess.run(
+        ["git", "-C", str(CHECKPOINT_REPO), "commit", "--amend", "--no-edit"] if has_commit
+        else ["git", "-C", str(CHECKPOINT_REPO), "commit", "-m", message],
+        check=True,
+    )
+    push_checkpoint_branch()
+
+def bootstrap_dataset_snapshot():
+    ensure_checkpoint_repo()
+    existed = CHECKPOINT_DATASET_META.is_file() and CHECKPOINT_DATASET_DIR.is_dir()
+    meta = ensure_dataset_snapshot()
+    if not existed:
+        commit_and_push_checkpoint_tree(f"dataset snapshot: {EXPERIMENT_NAME}")
+        print("دُفع snapshot بيانات المرحلة إلى GitHub قبل التدريب.")
+    return meta
 
 def publish_latest_checkpoint(state):
     ensure_checkpoint_repo()
-    remote_dir = CHECKPOINT_EXPERIMENT_DIR
-    atomic_copy(LOCAL_LAST_PT, remote_dir / "last.pt")
-    atomic_copy(LOCAL_CONTRACT_JSON, remote_dir / "data_contract.json")
+    dataset_meta = ensure_dataset_snapshot()
+    atomic_copy(LOCAL_LAST_PT, CHECKPOINT_EXPERIMENT_DIR / "last.pt")
+    atomic_copy(LOCAL_CONTRACT_JSON, CHECKPOINT_EXPERIMENT_DIR / "data_contract.json")
     if LOCAL_RESULTS_CSV.is_file():
-        atomic_copy(LOCAL_RESULTS_CSV, remote_dir / "results.csv")
-    atomic_json(remote_dir / "resume_state.json", state)
-    latest = {
-        "schema_version": 1, "experiment_name": EXPERIMENT_NAME, "stage": STAGE,
-        "source_commit": SOURCE_COMMIT, "checkpoint_path": str(remote_dir.relative_to(CHECKPOINT_REPO)),
-        "saved_after_epoch": state["saved_after_epoch"], "last_pt_sha256": state["last_pt_sha256"],
-    }
-    atomic_json(CHECKPOINT_ROOT / "latest.json", latest)
-    subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "add", "checkpoints"], check=True)
-    has_commit = subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "rev-parse", "--verify", "HEAD"], capture_output=True).returncode == 0
-    message = f"checkpoint: {EXPERIMENT_NAME} epoch {state['saved_after_epoch']}"
-    if has_commit:
-        subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "commit", "--amend", "--no-edit"], check=True)
-    else:
-        subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "commit", "-m", message], check=True)
-    push_checkpoint_branch()
-    print(f"دُفع checkpoint epoch {state['saved_after_epoch']} إلى GitHub/{CHECKPOINT_BRANCH}.")
+        atomic_copy(LOCAL_RESULTS_CSV, CHECKPOINT_EXPERIMENT_DIR / "results.csv")
+    state = state | {"dataset_snapshot": dataset_meta}
+    atomic_json(CHECKPOINT_EXPERIMENT_DIR / "resume_state.json", state)
+    atomic_json(CHECKPOINT_ROOT / "latest.json", {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "experiment_name": EXPERIMENT_NAME,
+        "stage": STAGE,
+        "checkpoint_path": str(CHECKPOINT_EXPERIMENT_DIR.relative_to(CHECKPOINT_REPO)),
+        "saved_after_epoch": state["saved_after_epoch"],
+        "last_pt_sha256": state["last_pt_sha256"],
+        "dataset_snapshot": dataset_meta,
+    })
+    commit_and_push_checkpoint_tree(f"checkpoint: {EXPERIMENT_NAME} epoch {state['saved_after_epoch']}")
+    print(f"دُفع snapshot الكامل بعد epoch {state['saved_after_epoch']} إلى GitHub/{CHECKPOINT_BRANCH}.")
 
 def sync_latest_checkpoint(trainer):
     local_last = Path(trainer.last)
-    if not local_last.is_file():
-        return
+    assert local_last.is_file(), f"لم ينشئ YOLO last.pt بعد: {local_last}"
     atomic_copy(local_last, LOCAL_LAST_PT)
     local_results = Path(trainer.save_dir) / "results.csv"
     if local_results.is_file():
@@ -446,20 +551,14 @@ def sync_latest_checkpoint(trainer):
     publish_latest_checkpoint(state)
 
 def report_gpu_memory(trainer):
-    if not torch.cuda.is_available():
-        return
-    device_index = torch.cuda.current_device()
-    total_gib = torch.cuda.get_device_properties(device_index).total_memory / (1024 ** 3)
-    allocated_gib = torch.cuda.memory_allocated(device_index) / (1024 ** 3)
-    reserved_gib = torch.cuda.memory_reserved(device_index) / (1024 ** 3)
-    peak_gib = torch.cuda.max_memory_allocated(device_index) / (1024 ** 3)
-    print(json.dumps({
-        "epoch": int(trainer.epoch) + 1,
-        "gpu_allocated_gib": round(allocated_gib, 2),
-        "gpu_reserved_gib": round(reserved_gib, 2),
-        "gpu_peak_gib": round(peak_gib, 2),
-        "gpu_total_gib": round(total_gib, 2),
-    }, ensure_ascii=False))
+    if torch.cuda.is_available():
+        device_index = torch.cuda.current_device()
+        print(json.dumps({
+            "epoch": int(trainer.epoch) + 1,
+            "gpu_reserved_gib": round(torch.cuda.memory_reserved(device_index) / (1024 ** 3), 2),
+            "gpu_peak_gib": round(torch.cuda.max_memory_allocated(device_index) / (1024 ** 3), 2),
+            "gpu_total_gib": round(torch.cuda.get_device_properties(device_index).total_memory / (1024 ** 3), 2),
+        }, ensure_ascii=False))
 
 def add_training_callbacks(model):
     model.add_callback("on_model_save", sync_latest_checkpoint)
@@ -474,9 +573,13 @@ def restore_latest_checkpoint_from_github():
         return False
     saved = json.loads(remote_state.read_text(encoding="utf-8"))
     for key, value in current_resume_contract().items():
+        if key == "schema_version" and saved.get(key, 1) == 1:
+            continue  # يسمح بترحيل checkpoint القديم مرة واحدة إلى snapshot v2.
         assert saved.get(key) == value, f"لا يستأنف التدريب: اختلاف {key}."
     assert saved.get("last_pt_sha256") == sha256_file(remote_last), "تلف أو تبدل last.pt في GitHub."
-    assert json.loads(remote_contract.read_text(encoding="utf-8"))["class_map_sha256"] == DATA_CONTRACT["class_map_sha256"]
+    remote_data_contract = json.loads(remote_contract.read_text(encoding="utf-8"))
+    for key in ("class_map_sha256", "manifest_sha256", "assets_sha256"):
+        assert remote_data_contract.get(key) == DATA_CONTRACT[key], f"عقد البيانات المستعاد يختلف في {key}."
     atomic_copy(remote_last, LOCAL_LAST_PT)
     atomic_copy(remote_contract, LOCAL_CONTRACT_JSON)
     if (CHECKPOINT_EXPERIMENT_DIR / "results.csv").is_file():
@@ -488,18 +591,15 @@ def restore_latest_checkpoint_from_github():
 def assert_resume_is_compatible():
     assert LOCAL_LAST_PT.is_file() and LOCAL_STATE_JSON.is_file() and LOCAL_CONTRACT_JSON.is_file()
     saved = json.loads(LOCAL_STATE_JSON.read_text(encoding="utf-8"))
-    for key, value in current_resume_contract().items():
-        assert saved.get(key) == value, f"لا يستأنف التدريب: اختلاف {key}."
     assert saved.get("last_pt_sha256") == sha256_file(LOCAL_LAST_PT), "تلف أو تبدل last.pt المحلي."
-    assert json.loads(LOCAL_CONTRACT_JSON.read_text(encoding="utf-8"))["class_map_sha256"] == DATA_CONTRACT["class_map_sha256"]
 `, "checkpoint-tools"),
 
   markdown("github-handoff", `
-## الاستئناف البسيط من GitHub
+## الاستئناف الكامل من GitHub
 
-لا يربط الدفتر Google Drive ولا ينقل dataset أو cache بين الحسابات. عند تشغيل خلية التدريب، تفحص تلقائيًا فرع "colab-checkpoints". إن وجدت فيه نقطة حفظ متوافقة مع المرحلة والعقد الحاليين، تنسخ "last.pt" وmetadata فقط إلى القرص المؤقت وتتابع التدريب؛ وإلا تبدأ baseline جديدًا.
+لا يربط الدفتر Google Drive. قبل التوليد، يحاول استعادة snapshot بيانات المرحلة من فرع "colab-checkpoints". إن لم يكن موجودًا، يولّد البيانات حتميًا ثم يدفعها إلى GitHub **قبل التدريب**. في كل epoch يدفع أيضًا "last.pt" و"results.csv" و"data_contract.json" و"resume_state.json"؛ لا يبدأ من الصفر بصمت عند فشل الاستعادة أو الدفع.
 
-يحفظ GitHub **آخر snapshot فقط** في الفرع المخصص، عبر تعديل commit نفسه ثم الدفع بـ"--force-with-lease" بعد كل epoch. هكذا يبقى الاستئناف ممكنًا من أي حساب Colab بلا تراكم تاريخ وزن كبير، لكن لا توجد نسخ epoch تاريخية منفصلة. لا تبدأ جلستين تدفعان إلى التجربة نفسها في الوقت نفسه.
+يحفظ GitHub **آخر snapshot واحدًا** في الفرع المخصص عبر تعديل commit نفسه ثم الدفع بـ"--force-with-lease". يحتوي هذا snapshot على الصور والوسوم وملفات العقد للمرحلة، حتى يمكن للحساب التالي استعادة data.yaml نفسه ووزن الاستئناف نفسه. لا تبدأ جلستين تدفعان إلى التجربة نفسها في الوقت نفسه.
 `, "github-handoff"),
 
   code("backup-workspace-to-drive", `
@@ -738,6 +838,7 @@ else:
 from ultralytics import YOLO
 
 RESTORE_LATEST_GITHUB_CHECKPOINT = True
+bootstrap_dataset_snapshot()
 restored_checkpoint = RESTORE_LATEST_GITHUB_CHECKPOINT and restore_latest_checkpoint_from_github()
 
 if restored_checkpoint:
