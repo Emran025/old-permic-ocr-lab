@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "coordinate_system": "[left, top, right, bottom] pixels on the raw hosted source",
+  "regions": [
+    {"crop_id":"zyryanskaya-strip-full","source_id":"zyryanskaya-trinity-inscription","box_xyxy":[0,0,2600,397],"status":"candidate_region","reason":"whole inscription strip; line segmentation follows a reviewed transcription"},
+    {"crop_id":"egor326-fig1-text","source_id":"egor-326-figures-1-2","box_xyxy":[24,10,990,236],"status":"candidate_region","reason":"upper manuscript text; excludes printed figure caption"},
+    {"crop_id":"egor326-fig2-text","source_id":"egor-326-figures-1-2","box_xyxy":[238,291,776,538],"status":"candidate_region","reason":"lower manuscript text; excludes printed figure caption"},
+    {"crop_id":"likh360-f274-textblock","source_id":"likh-360-f274-figure-3","box_xyxy":[0,0,774,651],"status":"candidate_region","reason":"dense text block for line-by-line transcription"},
+    {"crop_id":"volok9-f285v-text","source_id":"volok-9-11-figures-10-11","box_xyxy":[20,10,1078,286],"status":"candidate_region","reason":"upper source region; excludes composite caption"},
+    {"crop_id":"volok11-f271v-text","source_id":"volok-9-11-figures-10-11","box_xyxy":[48,351,1048,571],"status":"candidate_region","reason":"lower source region; excludes composite caption"},
+    {"crop_id":"uvar264-top-strip","source_id":"uvar-264-figure-14","box_xyxy":[305,8,885,134],"status":"candidate_region","reason":"separate top strip"},
+    {"crop_id":"uvar264-middle-left-strip","source_id":"uvar-264-figure-14","box_xyxy":[170,134,758,227],"status":"candidate_region","reason":"separate middle-left strip"},
+    {"crop_id":"uvar264-middle-right-strip","source_id":"uvar-264-figure-14","box_xyxy":[760,134,1024,227],"status":"candidate_region","reason":"separate middle-right strip"},
+    {"crop_id":"uvar264-lower-left-strip","source_id":"uvar-264-figure-14","box_xyxy":[55,324,528,409],"status":"candidate_region","reason":"separate lower-left strip"},
+    {"crop_id":"uvar264-lower-right-strip","source_id":"uvar-264-figure-14","box_xyxy":[527,324,1137,409],"status":"candidate_region","reason":"separate lower-right strip"},
+    {"crop_id":"uvar264-bottom-strip","source_id":"uvar-264-figure-14","box_xyxy":[429,410,760,516],"status":"candidate_region","reason":"separate bottom strip"}
+  ]
+}

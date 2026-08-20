@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "task": "old-permic-character-detection",
+  "unit": "one glyph instance",
+  "unicode_range": "U+10350-U+10375",
+  "required_fields": [
+    "instance_id",
+    "source_id",
+    "crop_id",
+    "bbox_crop_xyxy_px",
+    "unicode_codepoint",
+    "reading_reference",
+    "review_status",
+    "annotator"
+  ],
+  "review_statuses": ["candidate_region", "transcribed", "verified", "rejected"],
+  "export_rule": "Only records with review_status=verified and a non-empty Unicode codepoint are eligible for YOLO export.",
+  "split_rule": "All crops from one source_id must stay in one split to prevent manuscript-source leakage."
+}
