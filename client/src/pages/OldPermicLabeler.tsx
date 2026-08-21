@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import ResearchHeader from "@/components/ResearchHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { startLogin } from "@/const";
 import { primaryTextSources } from "@/data/primarySourceGallery";
@@ -41,6 +42,8 @@ type AnnotationStatus = "in_progress" | "needs_review" | "reviewed" | "approved"
 type DatasetSplit = "unassigned" | "train" | "val" | "test";
 type RotationDegrees = "0" | "90" | "180" | "270";
 type BoundingBox = { id: string; classId: number; x: number; y: number; width: number; height: number };
+type CropArea = { id: string; x: number; y: number; width: number; height: number };
+type CropUpload = { filename: string; dataUrl: string };
 type AnnotationRecord = {
   id: number; origin: "source_library" | "upload"; sourceLibraryId: string | null; originalFilename: string; imageUrl: string;
   sourceTitle: string; repositoryId: string; folioOrPage: string; sourceUrl: string; rightsBasis: string;
@@ -61,6 +64,36 @@ function isBox(value: unknown): value is BoundingBox { if (!value || typeof valu
 function yoloLine(box: BoundingBox) { return `${box.classId} ${((box.x + box.width / 2) / 100).toFixed(6)} ${((box.y + box.height / 2) / 100).toFixed(6)} ${(box.width / 100).toFixed(6)} ${(box.height / 100).toFixed(6)}`; }
 function mapRecord(record: AnnotationRecord): LabelImage { return { ...record, boxes: Array.isArray(record.boxes) ? record.boxes.filter(isBox) : [] }; }
 function readFileDataUrl(file: File) { return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("تعذر قراءة الصورة.")); reader.readAsDataURL(file); }); }
+export function cropTileFilename(originalFilename: string, index: number) { const cleaned = originalFilename.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100); const stem = cleaned || "old-permic-image"; return `${stem}-tile-${String(index + 1).padStart(2, "0")}.webp`; }
+function dataUrlBytes(dataUrl: string) { const comma = dataUrl.indexOf(","); return comma < 0 ? 0 : Math.floor((dataUrl.length - comma - 1) * 0.75); }
+function cropDataUrl(source: string, crop: CropArea) {
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const sourceX = Math.round((crop.x / 100) * image.naturalWidth);
+      const sourceY = Math.round((crop.y / 100) * image.naturalHeight);
+      const sourceWidth = Math.max(1, Math.round((crop.width / 100) * image.naturalWidth));
+      const sourceHeight = Math.max(1, Math.round((crop.height / 100) * image.naturalHeight));
+      let scale = Math.min(1, 3200 / Math.max(sourceWidth, sourceHeight));
+      let quality = 0.92;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+        canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+        const context = canvas.getContext("2d");
+        if (!context) { reject(new Error("تعذر تجهيز مساحة القص.")); return; }
+        context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/webp", quality);
+        if (dataUrlBytes(dataUrl) <= 4_500_000) { resolve(dataUrl); return; }
+        scale *= 0.78;
+        quality = Math.max(0.58, quality - 0.07);
+      }
+      reject(new Error("أحد المقاطع ما زال كبيرًا جدًا للحفظ؛ ارسمه بحجم أصغر."));
+    };
+    image.onerror = () => reject(new Error("تعذر فتح الصورة الكبيرة للتقسيم."));
+    image.src = source;
+  });
+}
 function csvField(value: string) { return `"${value.replaceAll("\"", "\"\"")}"`; }
 function exportImageName(image: LabelImage) { return `${String(image.id).padStart(5, "0")}_${image.originalFilename.replace(/[^a-zA-Z0-9._-]/g, "_")}`; }
 export function rotatePoint(point: { x: number; y: number }, rotation: RotationDegrees) {
@@ -123,8 +156,14 @@ export default function OldPermicLabeler() {
   const [zoom, setZoom] = useState([100]);
   const [showSources, setShowSources] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [cropUpload, setCropUpload] = useState<CropUpload | null>(null);
+  const [cropAreas, setCropAreas] = useState<CropArea[]>([]);
+  const [cropDraft, setCropDraft] = useState<DraftBox | null>(null);
+  const [cropNaturalSize, setCropNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [isSavingCrops, setIsSavingCrops] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
+  const cropInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!workspace.data) return;
@@ -169,6 +208,59 @@ export default function OldPermicLabeler() {
     } catch (error) { toast.error(error instanceof Error ? error.message : "تعذر حفظ الصورة في مشروع الوسم."); }
   };
 
+  const openCropFile = async (file: File) => {
+    if (!requireAuth()) return;
+    if (!imageTypes.has(file.type)) { toast.error("يدعم التقسيم صور PNG وJPG وWebP فقط."); return; }
+    try {
+      setCropUpload({ filename: file.name, dataUrl: await readFileDataUrl(file) });
+      setCropAreas([]);
+      setCropDraft(null);
+      setCropNaturalSize(null);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "تعذر قراءة الصورة للتقسيم."); }
+  };
+
+  const closeCropDialog = () => {
+    if (isSavingCrops) return;
+    setCropUpload(null);
+    setCropAreas([]);
+    setCropDraft(null);
+    setCropNaturalSize(null);
+  };
+
+  const cropPointerPosition = (event: PointerEvent<HTMLDivElement>) => {
+    const rectangle = event.currentTarget.getBoundingClientRect();
+    return { x: clamp(((event.clientX - rectangle.left) / rectangle.width) * 100), y: clamp(((event.clientY - rectangle.top) / rectangle.height) * 100) };
+  };
+  const startCrop = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
+    const point = cropPointerPosition(event); setCropDraft({ x: point.x, y: point.y, endX: point.x, endY: point.y });
+  };
+  const extendCrop = (event: PointerEvent<HTMLDivElement>) => { if (!cropDraft) return; const point = cropPointerPosition(event); setCropDraft((current) => current ? { ...current, endX: point.x, endY: point.y } : null); };
+  const finishCrop = (event: PointerEvent<HTMLDivElement>) => {
+    if (!cropDraft) return;
+    const point = cropPointerPosition(event); const dimensions = normaliseBox({ ...cropDraft, endX: point.x, endY: point.y }); setCropDraft(null);
+    if (dimensions.width < 3 || dimensions.height < 3) { toast.message("ارسم مقطعًا أكبر قليلًا."); return; }
+    setCropAreas((current) => [...current, { id: `${Date.now()}-${Math.random()}`, ...dimensions }]);
+  };
+  const saveCropAreas = async () => {
+    if (!cropUpload || !cropAreas.length || !requireAuth()) return;
+    setIsSavingCrops(true);
+    try {
+      const created: AnnotationRecord[] = [];
+      for (const [index, crop] of Array.from(cropAreas.entries())) {
+        const dataUrl = await cropDataUrl(cropUpload.dataUrl, crop);
+        const record = await uploadImage.mutateAsync({ filename: cropTileFilename(cropUpload.filename, index), dataUrl });
+        created.push(record as AnnotationRecord);
+      }
+      created.forEach(replaceImage);
+      await workspace.refetch();
+      toast.success(`حُفظت ${created.length} مقاطع كصور مستقلة قابلة للوسم.`);
+      closeCropDialog();
+      setShowSources(false);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "تعذر حفظ مقاطع الصورة."); }
+    finally { setIsSavingCrops(false); }
+  };
+
   const addSource = async (source: typeof primaryTextSources[number]) => {
     if (!requireAuth()) return;
     try {
@@ -183,6 +275,7 @@ export default function OldPermicLabeler() {
   };
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => { if (event.target.files) void addFiles(event.target.files); event.target.value = ""; };
+  const onCropFileChange = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) void openCropFile(file); event.target.value = ""; };
   const onDrop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); void addFiles(event.dataTransfer.files); };
   const pointerPosition = (event: PointerEvent<HTMLDivElement>) => { const rectangle = event.currentTarget.getBoundingClientRect(); const displayedPoint = { x: clamp(((event.clientX - rectangle.left) / rectangle.width) * 100), y: clamp(((event.clientY - rectangle.top) / rectangle.height) * 100) }; return unrotatePoint(displayedPoint, activeImage?.rotationDegrees ?? "0"); };
   const updateActive = (changes: Partial<LabelImage>) => { if (!activeImage) return; setImages((current) => current.map((image) => image.id === activeImage.id ? { ...image, ...changes } : image)); setIsDirty(true); };
@@ -264,7 +357,8 @@ export default function OldPermicLabeler() {
           <div className="grid min-h-[720px] xl:grid-cols-[280px_minmax(0,1fr)_330px]" dir="rtl">
             <aside className="order-2 border-t border-[#e4ddd0] bg-[#fcfbf7] xl:order-1 xl:border-l xl:border-t-0" aria-label="صور مشروع الوسم">
               <div className="border-b border-[#e4ddd0] p-4"><p className="text-[10px] font-semibold tracking-[0.16em] text-[#a16d37]">REAL DATASET</p><div className="mt-2 flex items-end justify-between"><h2 className="text-sm font-bold">صور مشروع الوسم</h2><span className="text-xs text-[#8c8b81]">{images.length}</span></div><div className="mt-2 grid grid-cols-3 gap-1 text-center text-[10px]"><span className="rounded-md bg-[#eef4ec] py-1.5 text-[#35614b]">{reviewedCount} مكتملة</span><span className="rounded-md bg-[#fff3df] py-1.5 text-[#875d2c]">{inProgressCount} مفتوحة</span><span className="rounded-md bg-[#edf1e8] py-1.5 text-[#536257]">{boxCount} صندوق</span></div><div className="mt-3 flex gap-2"><Button variant={showSources ? "default" : "outline"} size="sm" className={showSources ? "h-8 flex-1 bg-[#27463b] text-xs text-white" : "h-8 flex-1 border-[#d9d1c2] bg-white text-xs"} onClick={() => setShowSources((current) => !current)}><Plus className="ml-1 size-3.5" />من المصادر</Button><Button variant="outline" size="sm" className="h-8 flex-1 border-[#d9d1c2] bg-white text-xs" onClick={() => fileInput.current?.click()}><Upload className="ml-1 size-3.5" />رفع</Button><Button variant="outline" size="icon" className="size-8 border-[#d9d1c2] bg-white" onClick={() => folderInput.current?.click()} aria-label="رفع مجلد"><FolderOpen className="size-3.5" /></Button></div></div>
-              <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={onFileChange} className="sr-only" /><input ref={folderInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={onFileChange} className="sr-only" {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
+              <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={onFileChange} className="sr-only" /><input ref={cropInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={onCropFileChange} className="sr-only" /><input ref={folderInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={onFileChange} className="sr-only" {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
+              <div className="px-4 pb-3"><Button variant="outline" size="sm" className="h-8 w-full border-dashed border-[#c9b68e] bg-[#fffaf0] text-xs text-[#725631]" onClick={() => cropInput.current?.click()}><ScanLine className="ml-1 size-3.5" />تقطيع قبل الإضافة</Button><p className="mt-1.5 text-[10px] leading-4 text-[#7c796e]">ارسم المقاطع المطلوبة ثم تحفظ كل قطعة صورةً مستقلة للوسم.</p></div>
               <div className="max-h-[430px] overflow-auto p-3 xl:max-h-[calc(100vh-390px)]">{showSources ? <div className="space-y-2">{primaryTextSources.map((source) => { const alreadyAdded = images.some((image) => image.sourceLibraryId === source.id); return <article key={source.id} className="rounded-xl border border-[#e4ddd0] bg-white p-2.5"><div className="flex gap-2"><img src={source.imageUrl} alt="" className="size-12 rounded-lg object-cover" /><div className="min-w-0"><p className="line-clamp-2 text-xs font-semibold">{source.title}</p><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#87857d]">{source.trainingStatus}</p></div></div><Button size="sm" variant="outline" disabled={alreadyAdded || importSource.isPending} className="mt-2 h-7 w-full border-[#d7c7ad] text-[10px]" onClick={() => void addSource(source)}>{alreadyAdded ? "ضمن المشروع" : "أضف إلى الوسم"}</Button></article>; })}</div> : images.length ? <div className="space-y-2">{images.map((image, index) => <button key={image.id} onClick={() => { setActiveImageId(image.id); setDraft(null); setIsDirty(false); }} className={`flex w-full items-center gap-3 rounded-xl border p-2 text-right transition ${image.id === activeImageId ? "border-[#b8915c] bg-[#fff8eb] shadow-sm" : "border-transparent hover:border-[#e1d7c5] hover:bg-white"}`}><span className="relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-[#eae6dc]"><img src={image.imageUrl} alt="" className="size-full object-cover" />{image.boxes.length ? <span className="absolute bottom-0 left-0 rounded-tr-md bg-[#2d6b55] px-1 text-[9px] text-white">{image.boxes.length}</span> : null}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{image.sourceTitle}</span><span className="mt-1 flex items-center justify-between gap-2 text-[10px]"><span className="truncate text-[#8d8c83]">{index + 1} · {image.imageWidth ? `${image.imageWidth}×${image.imageHeight}` : "الأبعاد لاحقًا"}</span><span className={image.annotationStatus === "approved" ? "text-[#297152]" : image.annotationStatus === "needs_review" ? "text-[#a36526]" : "text-[#828178]"}>{statusCopy[image.annotationStatus]}</span></span></span></button>)}</div> : <div className="grid min-h-48 place-items-center text-center"><div><ImagePlus className="mx-auto size-6 text-[#b69569]" /><p className="mt-3 text-xs font-semibold">لا توجد صور بعد</p><p className="mt-1 text-[11px] leading-5 text-[#89877d]">أضف مصادر المخطوطات أو ارفع صورًا جديدة.</p></div></div>}</div>
               <div className="border-t border-[#e4ddd0] p-4"><p className="text-[10px] font-semibold tracking-[0.14em] text-[#8b704c]">EXPORT GATE</p><p className="mt-1 text-[11px] leading-5 text-[#74746c]">{reviewReady.data?.canExport ? "الحزمة جاهزة بنيويًا للتصدير؛ راجع التنوع وحجم العينة قبل التدريب." : reviewReady.data?.blockers[0] ?? "لا تدخل صورة إلى حزمة التدريب إلا بعد وجود صناديق ومصدر وحقوق وتقسيم وحالة مراجعة."}</p><div className="mt-2 flex gap-1 text-[10px]"><span className="rounded bg-[#eef4ec] px-1.5 py-1">train {reviewReady.data?.splitCounts.train ?? 0}</span><span className="rounded bg-[#eef4ec] px-1.5 py-1">val {reviewReady.data?.splitCounts.val ?? 0}</span><span className="rounded bg-[#eef4ec] px-1.5 py-1">test {reviewReady.data?.splitCounts.test ?? 0}</span></div></div>
             </aside>
@@ -283,6 +377,16 @@ export default function OldPermicLabeler() {
           </div>
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#ddd5c7] bg-[#fffdf9] px-5 py-3 text-[10px] text-[#838179]"><span>مشروع محفوظ · صور جديدة في التخزين</span><span>{boxCount} BOXES / {images.length} IMAGES · {reviewedCount} مراجعة</span><span>لا تصبح البيانات تدريبية إلا عبر بوابة التصدير المراجعة</span></footer>
         </section>
+        <Dialog open={Boolean(cropUpload)} onOpenChange={(open) => { if (!open) closeCropDialog(); }}>
+          {cropUpload ? <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto border-[#d8cdbb] bg-[#fffdf9] text-[#28372f]" dir="rtl">
+            <DialogHeader><DialogTitle>تقطيع الصورة الكبيرة قبل الإضافة</DialogTitle><DialogDescription className="leading-6">ارسم مستطيلًا لكل مقطع تريد وسمه. لا تُرفع الصورة الأصلية؛ تُحوَّل المقاطع المختارة فقط إلى صور WebP مستقلة داخل مشروعك.</DialogDescription></DialogHeader>
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="rounded-xl border border-[#d9cfbf] bg-[#ece7dd] p-2"><div className="relative touch-none select-none overflow-hidden rounded-lg bg-[#dcd5c9]" style={{ aspectRatio: cropNaturalSize ? `${cropNaturalSize.width} / ${cropNaturalSize.height}` : "4 / 3" }} onPointerDown={startCrop} onPointerMove={extendCrop} onPointerUp={finishCrop} onPointerCancel={() => setCropDraft(null)}><img src={cropUpload.dataUrl} alt="معاينة الصورة الأصلية للتقسيم" draggable={false} onLoad={(event) => setCropNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} className="absolute inset-0 size-full object-contain" />{cropAreas.map((crop, index) => <button key={crop.id} type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => setCropAreas((current) => current.filter((item) => item.id !== crop.id))} className="absolute border-2 border-[#2d7058] bg-[#50a27c]/15 outline-none transition hover:bg-[#d97c39]/20" style={{ left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.width}%`, height: `${crop.height}%` }} aria-label={`حذف المقطع ${index + 1}`}><span className="absolute -top-6 right-0 rounded-t bg-[#2d7058] px-2 py-0.5 text-[10px] text-white">مقطع {index + 1} ×</span></button>)}{cropDraft ? <div className="pointer-events-none absolute border-2 border-dashed border-[#b97834] bg-[#d8a15a]/15" style={{ left: `${normaliseBox(cropDraft).x}%`, top: `${normaliseBox(cropDraft).y}%`, width: `${normaliseBox(cropDraft).width}%`, height: `${normaliseBox(cropDraft).height}%` }} /> : null}</div></div>
+              <aside className="rounded-xl border border-[#e2d8c8] bg-white p-4"><p className="text-[10px] font-semibold tracking-[0.15em] text-[#a16d37]">CROP QUEUE</p><p className="mt-2 text-sm font-bold">{cropAreas.length} مقاطع جاهزة</p><p className="mt-2 text-[11px] leading-5 text-[#77756d]">يمكن أن تتداخل المقاطع إذا احتجت سياقًا بصريًا. يظهر كل مقطع لاحقًا كصورة منفصلة في قائمة الوسم، ويُراجع ويُقسّم ويُصدّر منفصلًا.</p><Button variant="outline" size="sm" className="mt-4 w-full border-[#d9cdbb] bg-[#fffdf9] text-xs" onClick={() => setCropAreas([])} disabled={!cropAreas.length || isSavingCrops}><Trash2 className="ml-1 size-3.5" />مسح المقاطع</Button><p className="mt-4 rounded-lg bg-[#f2f7ef] p-2.5 text-[10px] leading-5 text-[#466153]">يحافظ النظام على دقة المقطع ما أمكن ثم يضغطه عند الحاجة ليبقى ضمن حد الرفع الآمن.</p></aside>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0"><Button variant="outline" onClick={closeCropDialog} disabled={isSavingCrops}>إلغاء</Button><Button className="bg-[#27463b] text-white hover:bg-[#1f3a30]" onClick={() => void saveCropAreas()} disabled={!cropAreas.length || isSavingCrops}>{isSavingCrops ? <Loader2 className="ml-2 size-4 animate-spin" /> : <Upload className="ml-2 size-4" />}أنشئ المقاطع واحفظها</Button></DialogFooter>
+          </DialogContent> : null}
+        </Dialog>
       </main>
     </div>
   );
