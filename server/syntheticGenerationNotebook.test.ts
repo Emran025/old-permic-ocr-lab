@@ -44,6 +44,9 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("sync_latest_checkpoint");
     expect(code).toContain('"--amend", "-m", message');
     expect(code).toContain("assert_resume_is_compatible");
+    expect(code).toContain("TRAINING_ALREADY_COMPLETE");
+    expect(code).toContain('restored_epoch >= EPOCHS');
+    expect(code).toContain("لن يُستدعى resume=True");
     expect(code).toContain("last_pt_sha256");
     expect(code).toContain("save_period=1");
     expect(code).toContain("dataset_snapshot.json");
