@@ -447,8 +447,19 @@ def snapshot_meta_from_dataset():
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 
-def remove_stale_training_artifacts():
-    # لا يحمل وزنًا أو عقدًا يخص snapshot مختلف إلى تجربة المرحلة الجديدة.
+def snapshot_matches_training_contract(meta):
+    """يسمح بتبدل بصمة كود المولد فقط إذا كانت ملفات بيانات التدريب نفسها حرفيًا."""
+    identity = meta.get("identity", {})
+    return (
+        identity.get("experiment_name") == EXPERIMENT_NAME
+        and identity.get("stage") == STAGE
+        and meta.get("manifest_sha256") == DATA_CONTRACT["manifest_sha256"]
+        and meta.get("class_map_sha256") == DATA_CONTRACT["class_map_sha256"]
+        and meta.get("assets_sha256") == DATA_CONTRACT["assets_sha256"]
+    )
+
+def remove_incompatible_training_artifacts():
+    # لا يحمل وزنًا أو عقدًا يخص بيانات فعلية مختلفة إلى تجربة المرحلة الجديدة.
     for name in ("last.pt", "results.csv", "data_contract.json", "resume_state.json"):
         stale = CHECKPOINT_EXPERIMENT_DIR / name
         if stale.exists():
@@ -518,11 +529,19 @@ def ensure_dataset_snapshot():
         if meta.get("identity") == SNAPSHOT_IDENTITY:
             return meta
         stale_stage = meta.get("identity", {}).get("stage", "?")
-        print(
-            f"snapshot البيانات الموجود يخص مرحلة أو إعدادًا مختلفًا ({stale_stage})؛ "
-            f"سيُعاد توليد {STAGE} حتميًا ثم سيُستبدل snapshotها على GitHub."
-        )
-        remove_stale_training_artifacts()
+        keep_resume = snapshot_matches_training_contract(meta)
+        if keep_resume:
+            print(
+                f"تغيرت هوية snapshot أو كود المولد ({stale_stage})، لكن manifest وخريطة الفئات "
+                f"وسجل الأصول متطابقة مع {STAGE}؛ سيُعاد بناء snapshot البيانات فقط مع الاحتفاظ "
+                "بـlast.pt وresume_state.json للاستئناف."
+            )
+        else:
+            print(
+                f"snapshot البيانات الموجود يخص مرحلة أو إعدادًا مختلفًا ({stale_stage})؛ "
+                f"سيُعاد توليد {STAGE} حتميًا ثم سيُستبدل snapshotها على GitHub."
+            )
+            remove_incompatible_training_artifacts()
         copy_dataset_snapshot(DATASET_ROOT, CHECKPOINT_DATASET_DIR)
         meta = snapshot_meta_from_dataset()
         atomic_json(CHECKPOINT_DATASET_META, meta)
@@ -647,7 +666,7 @@ def assert_resume_is_compatible():
   markdown("github-handoff", `
 ## الاستئناف الكامل من GitHub
 
-لا يربط الدفتر Google Drive. قبل التوليد، يحاول استعادة snapshot بيانات المرحلة من فرع "colab-checkpoints". إن لم يكن موجودًا، يولّد البيانات حتميًا ثم يدفعها إلى GitHub **قبل التدريب**. في كل epoch يدفع أيضًا "last.pt" و"results.csv" و"data_contract.json" و"resume_state.json"؛ لا يبدأ من الصفر بصمت عند فشل الاستعادة أو الدفع.
+لا يربط الدفتر Google Drive. قبل التوليد، يحاول استعادة snapshot بيانات المرحلة من فرع "colab-checkpoints". إن لم يكن موجودًا، يولّد البيانات حتميًا ثم يدفعها إلى GitHub **قبل التدريب**. في كل epoch يدفع أيضًا "last.pt" و"results.csv" و"data_contract.json" و"resume_state.json"؛ لا يبدأ من الصفر بصمت عند فشل الاستعادة أو الدفع. إذا اختلفت بصمة كود المولد فقط بينما تطابقت \`manifest\` وخريطة الفئات وسجل الأصول، يعيد snapshot البيانات ولا يحذف \`last.pt\` أو \`resume_state.json\`.
 
 يحفظ GitHub **آخر snapshot واحدًا** في الفرع المخصص عبر تعديل commit نفسه ثم الدفع بـ"--force-with-lease". يحتوي هذا snapshot على الصور والوسوم وملفات العقد للمرحلة، حتى يمكن للحساب التالي استعادة data.yaml نفسه ووزن الاستئناف نفسه. لا تبدأ جلستين تدفعان إلى التجربة نفسها في الوقت نفسه.
 `, "github-handoff"),
