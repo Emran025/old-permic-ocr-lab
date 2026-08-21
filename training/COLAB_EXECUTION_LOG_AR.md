@@ -69,3 +69,9 @@
 في 21 أغسطس 2026 قُرئ فرع `colab-checkpoints` مباشرة من GitHub. تؤكد ملفات `checkpoints/latest.json` و`resume_state.json` المتوافقة أن تجربة `old_permic_s0_baseline_v2_batch8` حفظت `last.pt` بعد **epoch 33**، مع snapshot S0 كامل من 15,205 ملفًا وحزمة بيانات مطابقة للبصمات المسجلة. كما يحتوي `results.csv` على صفوف حتى epoch 33.
 
 لا يجعل ذلك النموذج إصدارًا معتمدًا أو نتيجة test منشورة: عنوان commit الجذر ما زال يقول `epoch 1`، ولذلك لا يُستعمل عنوان commit لإثبات التقدم؛ ويظل `latest.json` و`resume_state.json` و`results.csv` هي الأدلة الداخلية المتفقة. لا يوجد في هذا الفحص `release.json` منشور أو تقييم test مستقل أو وزن موصول بواجهة OCR؛ تبقى النتيجة **checkpoint baseline صناعي قابل للاستئناف فقط**.
+
+## أرشيف S0 المكتمل عند epoch 100
+
+في 21 أغسطس 2026 أُنشئ فرع GitHub ثابت باسم `s0-epoch100-checkpoint` من رأس `colab-checkpoints` عند commit `2a67afd0c3e9a68d66dbcd24d24419ba33a9b498`. يثبت `checkpoints/latest.json` أن `saved_after_epoch` يساوي `100`، وأن بصمة الوزن `last.pt` هي `db7ce494805f3c49505e30736eaec086c49f919b4192ad752c67c14c8a445bb2`.
+
+هذا الفرع يحفظ نقطة الاستعادة وsnapshot بيانات S0 كما كانت عند نهاية التدريب، ولا يتحرك مع أي تجارب أو checkpoints لاحقة. لا يساوي الأرشيف إصدار OCR أو نتيجة test؛ يبقى بناء `release.json` بعد تشغيل التقييم المستقل الخطوة التالية المطلوبة قبل الربط الاستدلالي.
