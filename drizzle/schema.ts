@@ -112,6 +112,7 @@ export const annotationImages = mysqlTable("annotation_images", {
   notes: text("notes"),
   imageWidth: int("imageWidth"),
   imageHeight: int("imageHeight"),
+  rotationDegrees: mysqlEnum("rotationDegrees", ["0", "90", "180", "270"]).notNull().default("0"),
   reviewedAt: timestamp("reviewedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

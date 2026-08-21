@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import OldPermicLabeler, { OLD_PERMIC_CLASSES } from "./OldPermicLabeler";
+import OldPermicLabeler, { displayedBox, OLD_PERMIC_CLASSES, rotatePoint, unrotatePoint } from "./OldPermicLabeler";
 
 vi.mock("@/components/ResearchHeader", () => ({ default: () => <header>التنقل</header> }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false }) }));
@@ -29,5 +29,12 @@ describe("OldPermicLabeler", () => {
     expect(markup).toContain("تقتصر القائمة على 38 محرفًا");
     expect(markup).toContain("لا تدخل صورة إلى حزمة التدريب");
     expect(markup).toContain("تصدير المراجَع");
+  });
+
+  it("maps rotated display coordinates back to the original YOLO coordinate space", () => {
+    const original = { x: 20, y: 30 };
+    expect(rotatePoint(original, "90")).toEqual({ x: 70, y: 20 });
+    expect(unrotatePoint({ x: 70, y: 20 }, "90")).toEqual(original);
+    expect(displayedBox({ id: "box", classId: 0, x: 20, y: 30, width: 10, height: 20 }, "90")).toEqual({ x: 50, y: 20, width: 20, height: 10 });
   });
 });

@@ -35,6 +35,7 @@ const annotationBoxInput = z.object({
 
 const annotationStatusInput = z.enum(["in_progress", "needs_review", "reviewed", "approved", "excluded"]);
 const annotationSplitInput = z.enum(["unassigned", "train", "val", "test"]);
+const annotationRotationInput = z.enum(["0", "90", "180", "270"]);
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -178,6 +179,7 @@ export const appRouter = router({
         oldPermicVisible: z.boolean(),
         imageWidth: z.number().int().positive().nullable(),
         imageHeight: z.number().int().positive().nullable(),
+        rotationDegrees: annotationRotationInput,
       }))
       .mutation(async ({ ctx, input }) => {
         const existing = await getAnnotationImageForUser(input.imageId, ctx.user.id);
@@ -198,6 +200,7 @@ export const appRouter = router({
           oldPermicVisible: input.oldPermicVisible,
           imageWidth: input.imageWidth,
           imageHeight: input.imageHeight,
+          rotationDegrees: input.rotationDegrees,
           reviewedAt: ["reviewed", "approved"].includes(input.annotationStatus) ? new Date() : null,
         });
       }),

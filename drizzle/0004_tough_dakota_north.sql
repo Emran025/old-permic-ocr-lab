@@ -1,0 +1,1 @@
+ALTER TABLE `annotation_images` ADD `rotationDegrees` enum('0','90','180','270') DEFAULT '0' NOT NULL;

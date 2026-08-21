@@ -254,7 +254,7 @@ export async function createAnnotationImage(image: InsertAnnotationImage) {
 export async function updateAnnotationImageForUser(
   imageId: number,
   userId: number,
-  changes: Partial<Pick<AnnotationImage, "boxes" | "annotationStatus" | "split" | "notes" | "sourceTitle" | "repositoryId" | "folioOrPage" | "sourceUrl" | "rightsBasis" | "oldPermicVisible" | "imageWidth" | "imageHeight" | "reviewedAt">>,
+  changes: Partial<Pick<AnnotationImage, "boxes" | "annotationStatus" | "split" | "notes" | "sourceTitle" | "repositoryId" | "folioOrPage" | "sourceUrl" | "rightsBasis" | "oldPermicVisible" | "imageWidth" | "imageHeight" | "rotationDegrees" | "reviewedAt">>,
 ) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة.");

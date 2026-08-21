@@ -18,6 +18,8 @@ import {
   Loader2,
   MousePointer2,
   Plus,
+  RotateCcw,
+  RotateCw,
   Save,
   ScanLine,
   ShieldCheck,
@@ -37,12 +39,13 @@ export const OLD_PERMIC_CLASSES: OldPermicClass[] = [
 
 type AnnotationStatus = "in_progress" | "needs_review" | "reviewed" | "approved" | "excluded";
 type DatasetSplit = "unassigned" | "train" | "val" | "test";
+type RotationDegrees = "0" | "90" | "180" | "270";
 type BoundingBox = { id: string; classId: number; x: number; y: number; width: number; height: number };
 type AnnotationRecord = {
   id: number; origin: "source_library" | "upload"; sourceLibraryId: string | null; originalFilename: string; imageUrl: string;
   sourceTitle: string; repositoryId: string; folioOrPage: string; sourceUrl: string; rightsBasis: string;
   oldPermicVisible: boolean; split: DatasetSplit; annotationStatus: AnnotationStatus; boxes: unknown; notes: string | null;
-  imageWidth: number | null; imageHeight: number | null;
+  imageWidth: number | null; imageHeight: number | null; rotationDegrees: RotationDegrees;
 };
 type LabelImage = Omit<AnnotationRecord, "boxes"> & { boxes: BoundingBox[] };
 type DraftBox = { x: number; y: number; endX: number; endY: number };
@@ -60,6 +63,50 @@ function mapRecord(record: AnnotationRecord): LabelImage { return { ...record, b
 function readFileDataUrl(file: File) { return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("تعذر قراءة الصورة.")); reader.readAsDataURL(file); }); }
 function csvField(value: string) { return `"${value.replaceAll("\"", "\"\"")}"`; }
 function exportImageName(image: LabelImage) { return `${String(image.id).padStart(5, "0")}_${image.originalFilename.replace(/[^a-zA-Z0-9._-]/g, "_")}`; }
+export function rotatePoint(point: { x: number; y: number }, rotation: RotationDegrees) {
+  if (rotation === "90") return { x: 100 - point.y, y: point.x };
+  if (rotation === "180") return { x: 100 - point.x, y: 100 - point.y };
+  if (rotation === "270") return { x: point.y, y: 100 - point.x };
+  return point;
+}
+export function unrotatePoint(point: { x: number; y: number }, rotation: RotationDegrees) {
+  if (rotation === "90") return { x: point.y, y: 100 - point.x };
+  if (rotation === "180") return { x: 100 - point.x, y: 100 - point.y };
+  if (rotation === "270") return { x: 100 - point.y, y: point.x };
+  return point;
+}
+export function displayedBox(box: BoundingBox, rotation: RotationDegrees) {
+  const corners = [rotatePoint({ x: box.x, y: box.y }, rotation), rotatePoint({ x: box.x + box.width, y: box.y }, rotation), rotatePoint({ x: box.x, y: box.y + box.height }, rotation), rotatePoint({ x: box.x + box.width, y: box.y + box.height }, rotation)];
+  const xs = corners.map((point) => point.x); const ys = corners.map((point) => point.y);
+  const x = Math.min(...xs); const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+}
+function nextRotation(current: RotationDegrees, direction: 1 | -1): RotationDegrees {
+  const values: RotationDegrees[] = ["0", "90", "180", "270"];
+  return values[(values.indexOf(current) + direction + values.length) % values.length];
+}
+
+function RotatedImageCanvas({ src, rotation, alt }: { src: string; rotation: RotationDegrees; alt: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const image = new Image();
+    image.onload = () => {
+      const quarterTurn = rotation === "90" || rotation === "270";
+      canvas.width = quarterTurn ? image.naturalHeight : image.naturalWidth;
+      canvas.height = quarterTurn ? image.naturalWidth : image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      if (rotation === "90") { context.translate(canvas.width, 0); context.rotate(Math.PI / 2); }
+      if (rotation === "180") { context.translate(canvas.width, canvas.height); context.rotate(Math.PI); }
+      if (rotation === "270") { context.translate(0, canvas.height); context.rotate(-Math.PI / 2); }
+      context.drawImage(image, 0, 0);
+    };
+    image.src = src;
+  }, [rotation, src]);
+  return <canvas ref={canvasRef} aria-label={alt} className="absolute inset-0 size-full" />;
+}
 
 export default function OldPermicLabeler() {
   const { isAuthenticated } = useAuth();
@@ -137,7 +184,7 @@ export default function OldPermicLabeler() {
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => { if (event.target.files) void addFiles(event.target.files); event.target.value = ""; };
   const onDrop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); void addFiles(event.dataTransfer.files); };
-  const pointerPosition = (event: PointerEvent<HTMLDivElement>) => { const rectangle = event.currentTarget.getBoundingClientRect(); return { x: clamp(((event.clientX - rectangle.left) / rectangle.width) * 100), y: clamp(((event.clientY - rectangle.top) / rectangle.height) * 100) }; };
+  const pointerPosition = (event: PointerEvent<HTMLDivElement>) => { const rectangle = event.currentTarget.getBoundingClientRect(); const displayedPoint = { x: clamp(((event.clientX - rectangle.left) / rectangle.width) * 100), y: clamp(((event.clientY - rectangle.top) / rectangle.height) * 100) }; return unrotatePoint(displayedPoint, activeImage?.rotationDegrees ?? "0"); };
   const updateActive = (changes: Partial<LabelImage>) => { if (!activeImage) return; setImages((current) => current.map((image) => image.id === activeImage.id ? { ...image, ...changes } : image)); setIsDirty(true); };
   const startBox = (event: PointerEvent<HTMLDivElement>) => { if (!activeImage || tool !== "box") return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); const point = pointerPosition(event); setDraft({ x: point.x, y: point.y, endX: point.x, endY: point.y }); };
   const extendBox = (event: PointerEvent<HTMLDivElement>) => { if (!draft || tool !== "box") return; const point = pointerPosition(event); setDraft((current) => current ? { ...current, endX: point.x, endY: point.y } : null); };
@@ -152,7 +199,7 @@ export default function OldPermicLabeler() {
         imageId: activeImage.id, boxes: activeImage.boxes, annotationStatus: activeImage.annotationStatus, split: activeImage.split,
         notes: activeImage.notes, sourceTitle: activeImage.sourceTitle, repositoryId: activeImage.repositoryId, folioOrPage: activeImage.folioOrPage,
         sourceUrl: activeImage.sourceUrl, rightsBasis: activeImage.rightsBasis, oldPermicVisible: activeImage.oldPermicVisible,
-        imageWidth: activeImage.imageWidth, imageHeight: activeImage.imageHeight,
+        imageWidth: activeImage.imageWidth, imageHeight: activeImage.imageHeight, rotationDegrees: activeImage.rotationDegrees,
       });
       replaceImage(record as AnnotationRecord);
       setIsDirty(false);
@@ -223,9 +270,9 @@ export default function OldPermicLabeler() {
             </aside>
 
             <section className="order-1 flex min-w-0 flex-col bg-[#f7f5ef] xl:order-2" aria-label="مساحة رسم صناديق الوسم">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2dbce] bg-[#faf9f5] px-4 py-3"><div className="flex items-center gap-2"><Button variant={tool === "select" ? "default" : "outline"} size="sm" className={tool === "select" ? "bg-[#27463b] text-white" : "border-[#d9d1c2] bg-white"} onClick={() => setTool("select")}><MousePointer2 className="ml-1 size-3.5" />وسم</Button><Button variant={tool === "box" ? "default" : "outline"} size="sm" className={tool === "box" ? "bg-[#27463b] text-white" : "border-[#d9d1c2] bg-white"} onClick={() => setTool("box")}><BoxSelect className="ml-1 size-3.5" />صندوق</Button><span className="hidden text-xs text-[#8b887e] sm:inline">{activeImage ? activeImage.originalFilename : "ANNOTATION / NO IMAGE"}</span></div><div className="flex items-center gap-3 text-xs text-[#77796f]"><span>{activeImage ? `${activeImage.imageWidth || "—"} × ${activeImage.imageHeight || "—"}` : "—"}</span><span>{tool === "box" ? "اسحب لرسم صندوق" : "وضع التحديد"}</span></div></div>
-              <div className="relative flex min-h-[500px] flex-1 items-center justify-center overflow-auto p-5 sm:p-8">{activeImage ? <div className="relative w-full max-w-4xl overflow-hidden rounded-xl border border-[#cfc4b0] bg-[#e7e2d8] shadow-[0_10px_28px_rgba(60,58,45,0.12)]" style={{ transform: `scale(${zoom[0] / 100})`, transformOrigin: "center center" }}><div className="relative touch-none select-none" style={{ aspectRatio: activeImage.imageWidth && activeImage.imageHeight ? `${activeImage.imageWidth} / ${activeImage.imageHeight}` : "4 / 3" }} onPointerDown={startBox} onPointerMove={extendBox} onPointerUp={finishBox} onPointerCancel={() => setDraft(null)}><img src={activeImage.imageUrl} alt={`صورة الوسم ${activeImage.sourceTitle}`} draggable={false} onLoad={updateDimensions} className="absolute inset-0 size-full object-cover" />{activeImage.boxes.map((box) => { const current = OLD_PERMIC_CLASSES[box.classId]; return <button key={box.id} type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => removeBox(box.id)} className="absolute border-2 border-[#e39a3e] bg-[#f5a947]/10 text-right outline-none transition hover:bg-[#e39a3e]/20 focus:ring-2 focus:ring-[#2d7058]" style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, height: `${box.height}%` }} aria-label={`حذف صندوق ${current?.glyph ?? ""}`}><span className="absolute -top-6 right-0 flex h-5 items-center gap-1 rounded-t bg-[#d58222] px-1.5 font-old-permic text-xs text-white"><span>{current?.glyph}</span><X className="size-3" /></span></button>; })}{draftDimensions ? <div className="pointer-events-none absolute border-2 border-dashed border-[#2d7058] bg-[#4fa07d]/10" style={{ left: `${draftDimensions.x}%`, top: `${draftDimensions.y}%`, width: `${draftDimensions.width}%`, height: `${draftDimensions.height}%` }} /> : null}</div></div> : <div onDragOver={(event) => event.preventDefault()} onDrop={onDrop} className="grid min-h-72 w-full max-w-xl place-items-center rounded-2xl border-2 border-dashed border-[#d5c9b6] bg-[#fffdf9] p-8 text-center shadow-[0_10px_30px_rgba(70,64,50,0.05)]"><div><span className="mx-auto grid size-14 place-items-center rounded-2xl border border-[#e3d5be] bg-[#fff9ef] text-[#a96d31]"><Upload className="size-6" /></span><p className="mt-5 text-xl font-bold">جهّز مشروع البيانات الحقيقية</p><p className="mt-3 max-w-sm text-sm leading-7 text-[#77766e]">أضف صورة من مكتبة المخطوطات أو ارفع صورة جديدة، ثم وسم المحارف المرئية وحفظ حالة مراجعتها.</p><div className="mt-6 flex flex-wrap justify-center gap-2"><Button className="bg-[#27463b] text-white hover:bg-[#1f3a30]" onClick={() => setShowSources(true)}><Tags className="ml-2 size-4" />استعرض المصادر</Button><Button variant="outline" className="border-[#d7c7ad] bg-white" onClick={() => fileInput.current?.click()}><ImagePlus className="ml-2 size-4" />ارفع صورة</Button></div><p className="mt-4 text-[11px] text-[#8d8b82]">تُحفظ الصور المرفوعة وبيانات المراجعة في مشروعك؛ لا يعني الحفظ اعتمادها للتدريب.</p></div></div>}</div>
-              <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e2dbce] bg-[#faf9f5] px-4 py-3"><div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="text-[#875e31] hover:bg-[#fff1dc] hover:text-[#774b20]" onClick={clearActiveBoxes} disabled={!activeImage?.boxes.length}><Trash2 className="ml-1 size-3.5" />مسح الكل</Button><span className="text-xs text-[#8b8a82]">{activeImage?.boxes.length ?? 0} صندوق في الصورة {isDirty ? "· تغييرات غير محفوظة" : ""}</span></div><div className="flex items-center gap-2"><span className="text-[11px] text-[#8b8a82]">التكبير</span><Slider className="w-24" min={70} max={140} step={5} value={zoom} onValueChange={setZoom} /><span className="w-9 text-xs font-semibold text-[#6c695e]">{zoom[0]}%</span><Button variant="outline" size="sm" className="border-[#d8cdb9] bg-white" onClick={() => navigate(1)} disabled={!activeImage}><ChevronLeft className="ml-1 size-3.5" />التالي</Button></div></footer>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2dbce] bg-[#faf9f5] px-4 py-3"><div className="flex items-center gap-2"><Button variant={tool === "select" ? "default" : "outline"} size="sm" className={tool === "select" ? "bg-[#27463b] text-white" : "border-[#d9d1c2] bg-white"} onClick={() => setTool("select")}><MousePointer2 className="ml-1 size-3.5" />وسم</Button><Button variant={tool === "box" ? "default" : "outline"} size="sm" className={tool === "box" ? "bg-[#27463b] text-white" : "border-[#d9d1c2] bg-white"} onClick={() => setTool("box")}><BoxSelect className="ml-1 size-3.5" />صندوق</Button><span className="hidden text-xs text-[#8b887e] sm:inline">{activeImage ? activeImage.originalFilename : "ANNOTATION / NO IMAGE"}</span></div><div className="flex items-center gap-2 text-xs text-[#77796f]"><span>{activeImage ? `${activeImage.imageWidth || "—"} × ${activeImage.imageHeight || "—"}` : "—"}</span><span>{tool === "box" ? "اسحب لرسم صندوق" : "وضع التحديد"}</span></div></div>
+              <div className="relative flex min-h-[500px] flex-1 items-center justify-center overflow-auto p-5 sm:p-8">{activeImage ? <div className="relative w-full max-w-4xl overflow-hidden rounded-xl border border-[#cfc4b0] bg-[#e7e2d8] shadow-[0_10px_28px_rgba(60,58,45,0.12)]" style={{ transform: `scale(${zoom[0] / 100})`, transformOrigin: "center center" }}><div className="relative touch-none select-none" style={{ aspectRatio: activeImage.imageWidth && activeImage.imageHeight ? (activeImage.rotationDegrees === "90" || activeImage.rotationDegrees === "270" ? `${activeImage.imageHeight} / ${activeImage.imageWidth}` : `${activeImage.imageWidth} / ${activeImage.imageHeight}`) : "4 / 3" }} onPointerDown={startBox} onPointerMove={extendBox} onPointerUp={finishBox} onPointerCancel={() => setDraft(null)}><img src={activeImage.imageUrl} alt="" draggable={false} onLoad={updateDimensions} className="sr-only" /><RotatedImageCanvas src={activeImage.imageUrl} rotation={activeImage.rotationDegrees} alt={`صورة الوسم ${activeImage.sourceTitle}`} />{activeImage.boxes.map((box) => { const current = OLD_PERMIC_CLASSES[box.classId]; const displayed = displayedBox(box, activeImage.rotationDegrees); return <button key={box.id} type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => removeBox(box.id)} className="absolute border-2 border-[#e39a3e] bg-[#f5a947]/10 text-right outline-none transition hover:bg-[#e39a3e]/20 focus:ring-2 focus:ring-[#2d7058]" style={{ left: `${displayed.x}%`, top: `${displayed.y}%`, width: `${displayed.width}%`, height: `${displayed.height}%` }} aria-label={`حذف صندوق ${current?.glyph ?? ""}`}><span className="absolute -top-6 right-0 flex h-5 items-center gap-1 rounded-t bg-[#d58222] px-1.5 font-old-permic text-xs text-white"><span>{current?.glyph}</span><X className="size-3" /></span></button>; })}{draftDimensions ? (() => { const displayed = displayedBox({ id: "draft", classId: activeClassId, ...draftDimensions }, activeImage.rotationDegrees); return <div className="pointer-events-none absolute border-2 border-dashed border-[#2d7058] bg-[#4fa07d]/10" style={{ left: `${displayed.x}%`, top: `${displayed.y}%`, width: `${displayed.width}%`, height: `${displayed.height}%` }} />; })() : null}</div></div> : <div onDragOver={(event) => event.preventDefault()} onDrop={onDrop} className="grid min-h-72 w-full max-w-xl place-items-center rounded-2xl border-2 border-dashed border-[#d5c9b6] bg-[#fffdf9] p-8 text-center shadow-[0_10px_30px_rgba(70,64,50,0.05)]"><div><span className="mx-auto grid size-14 place-items-center rounded-2xl border border-[#e3d5be] bg-[#fff9ef] text-[#a96d31]"><Upload className="size-6" /></span><p className="mt-5 text-xl font-bold">جهّز مشروع البيانات الحقيقية</p><p className="mt-3 max-w-sm text-sm leading-7 text-[#77766e]">أضف صورة من مكتبة المخطوطات أو ارفع صورة جديدة، ثم وسم المحارف المرئية وحفظ حالة مراجعتها.</p><div className="mt-6 flex flex-wrap justify-center gap-2"><Button className="bg-[#27463b] text-white hover:bg-[#1f3a30]" onClick={() => setShowSources(true)}><Tags className="ml-2 size-4" />استعرض المصادر</Button><Button variant="outline" className="border-[#d7c7ad] bg-white" onClick={() => fileInput.current?.click()}><ImagePlus className="ml-2 size-4" />ارفع صورة</Button></div><p className="mt-4 text-[11px] text-[#8d8b82]">تُحفظ الصور المرفوعة وبيانات المراجعة في مشروعك؛ لا يعني الحفظ اعتمادها للتدريب.</p></div></div>}</div>
+              <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e2dbce] bg-[#faf9f5] px-4 py-3"><div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="text-[#875e31] hover:bg-[#fff1dc] hover:text-[#774b20]" onClick={clearActiveBoxes} disabled={!activeImage?.boxes.length}><Trash2 className="ml-1 size-3.5" />مسح الكل</Button><span className="text-xs text-[#8b8a82]">{activeImage?.boxes.length ?? 0} صندوق في الصورة {isDirty ? "· تغييرات غير محفوظة" : ""}</span></div><div className="flex items-center gap-2"><span className="text-[11px] text-[#8b8a82]">التدوير</span><Button variant="outline" size="icon" className="size-8 border-[#d8cdb9] bg-white" onClick={() => { if (activeImage) updateActive({ rotationDegrees: nextRotation(activeImage.rotationDegrees, -1) }); }} disabled={!activeImage} aria-label="تدوير عكس عقارب الساعة"><RotateCcw className="size-3.5" /></Button><span className="w-8 text-center text-xs font-semibold text-[#6c695e]">{activeImage?.rotationDegrees ?? "0"}°</span><Button variant="outline" size="icon" className="size-8 border-[#d8cdb9] bg-white" onClick={() => { if (activeImage) updateActive({ rotationDegrees: nextRotation(activeImage.rotationDegrees, 1) }); }} disabled={!activeImage} aria-label="تدوير مع عقارب الساعة"><RotateCw className="size-3.5" /></Button><span className="mr-2 text-[11px] text-[#8b8a82]">التكبير</span><Slider className="w-20" min={70} max={140} step={5} value={zoom} onValueChange={setZoom} /><span className="w-9 text-xs font-semibold text-[#6c695e]">{zoom[0]}%</span><Button variant="outline" size="sm" className="border-[#d8cdb9] bg-white" onClick={() => navigate(1)} disabled={!activeImage}><ChevronLeft className="ml-1 size-3.5" />التالي</Button></div></footer>
             </section>
 
             <aside className="order-3 border-t border-[#e4ddd0] bg-[#fcfbf7] xl:border-t-0" aria-label="تفاصيل الوسم والمراجعة">
