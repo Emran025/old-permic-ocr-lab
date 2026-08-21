@@ -14,6 +14,12 @@ export const GITHUB_RELEASE_SYNC = {
   pointerPath: "artifacts/published/latest.json",
 } as const;
 
+export const GITHUB_CHECKPOINT_STATUS = {
+  repository: "Emran025/old-permic-ocr-lab",
+  branch: "colab-checkpoints",
+  pointerPath: "checkpoints/latest.json",
+} as const;
+
 const HEX64 = /^[a-f0-9]{64}$/i;
 const SAFE_RELATIVE_PATH = /^(?!.*(?:^|\/)\.\.(?:\/|$))[a-zA-Z0-9][a-zA-Z0-9._/-]{0,480}$/;
 
@@ -47,11 +53,26 @@ const pointerSchema = z.object({
   release_sha256: z.string().regex(HEX64),
 });
 
+const checkpointSchema = z.object({
+  schema_version: z.literal(2),
+  experiment_name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,179}$/),
+  stage: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/),
+  checkpoint_path: z.string().regex(SAFE_RELATIVE_PATH),
+  saved_after_epoch: z.number().int().nonnegative(),
+  last_pt_sha256: z.string().regex(HEX64),
+  dataset_snapshot: z.object({
+    schema_version: z.literal(2),
+    tree: z.object({ file_count: z.number().int().positive(), bytes: z.number().int().positive() }),
+    manifest_sha256: z.string().regex(HEX64),
+    class_map_sha256: z.string().regex(HEX64),
+  }),
+});
+
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 type ReleasePayload = z.infer<typeof releaseSchema>;
 
-function rawGithubUrl(path: string): string {
-  return `https://raw.githubusercontent.com/${GITHUB_RELEASE_SYNC.repository}/${GITHUB_RELEASE_SYNC.branch}/${path}`;
+function rawGithubUrl(path: string, branch: string = GITHUB_RELEASE_SYNC.branch): string {
+  return `https://raw.githubusercontent.com/${GITHUB_RELEASE_SYNC.repository}/${branch}/${path}`;
 }
 
 function sha256Text(value: string): string {
@@ -119,6 +140,13 @@ export async function fetchPublishedTrainingRelease(fetcher: FetchLike = fetch) 
   };
 }
 
+export async function fetchPublicTrainingCheckpoint(fetcher: FetchLike = fetch) {
+  const pointerUrl = rawGithubUrl(GITHUB_CHECKPOINT_STATUS.pointerPath, GITHUB_CHECKPOINT_STATUS.branch);
+  const pointerText = await fetchText(fetcher, pointerUrl, "NO_CHECKPOINT");
+  const checkpoint = checkpointSchema.parse(parseJson("checkpoint latest.json", pointerText));
+  return { checkpoint, pointerUrl };
+}
+
 export async function syncPublishedTrainingRelease() {
   const now = new Date();
   try {
@@ -169,9 +197,17 @@ export async function syncPublishedTrainingRelease() {
 }
 
 export async function getTrainingReleaseOverview() {
-  const [release, sync] = await Promise.all([
+  const [release, sync, checkpointStatus] = await Promise.all([
     getLatestTrainingRelease(),
     getTrainingSyncState(GITHUB_RELEASE_SYNC.stateKey),
+    fetchPublicTrainingCheckpoint()
+      .then((remote) => ({ kind: "available" as const, ...remote }))
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        return message === "NO_CHECKPOINT"
+          ? { kind: "missing" as const }
+          : { kind: "unavailable" as const, error: message.slice(0, 200) };
+      }),
   ]);
   return {
     repository: GITHUB_RELEASE_SYNC.repository,
@@ -179,5 +215,6 @@ export async function getTrainingReleaseOverview() {
     pointerPath: GITHUB_RELEASE_SYNC.pointerPath,
     release,
     sync,
+    checkpointStatus,
   };
 }
