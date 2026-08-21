@@ -498,7 +498,7 @@ def commit_and_push_checkpoint_tree(message):
     subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "add", CHECKPOINT_ROOT_NAME], check=True)
     has_commit = subprocess.run(["git", "-C", str(CHECKPOINT_REPO), "rev-parse", "--verify", "HEAD"], capture_output=True).returncode == 0
     subprocess.run(
-        ["git", "-C", str(CHECKPOINT_REPO), "commit", "--amend", "--no-edit"] if has_commit
+        ["git", "-C", str(CHECKPOINT_REPO), "commit", "--amend", "-m", message] if has_commit
         else ["git", "-C", str(CHECKPOINT_REPO), "commit", "-m", message],
         check=True,
     )

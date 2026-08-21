@@ -42,6 +42,7 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("USE_COLAB_SECRET_FALLBACK = False");
     expect(code).toContain('userdata.get("GITHUB_WRITE_TOKEN")');
     expect(code).toContain("sync_latest_checkpoint");
+    expect(code).toContain('"--amend", "-m", message');
     expect(code).toContain("assert_resume_is_compatible");
     expect(code).toContain("last_pt_sha256");
     expect(code).toContain("save_period=1");
