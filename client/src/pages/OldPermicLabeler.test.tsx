@@ -29,6 +29,8 @@ describe("OldPermicLabeler", () => {
     expect(markup).toContain("تقتصر القائمة على 38 محرفًا");
     expect(markup).toContain("لا تدخل صورة إلى حزمة التدريب");
     expect(markup).toContain("تصدير المراجَع");
+    expect(markup).toContain("300%");
+    expect(markup).toContain('max="400"');
   });
 
   it("maps rotated display coordinates back to the original YOLO coordinate space", () => {

@@ -30,6 +30,10 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("SNAPSHOT_RESTORED_FROM_GITHUB");
     expect(code).toContain("snapshot غير مطابق للمرحلة أو المولد أو الخط");
     expect(code).toContain("ستنشئ المرحلة الحالية بياناتها الحتمية المستقلة");
+    expect(code).toContain("SNAPSHOT_REGENERATED_FOR_CURRENT_STAGE");
+    expect(code).toContain("سيُعاد توليد {STAGE} حتميًا ثم سيُستبدل snapshotها على GitHub");
+    expect(code).toContain("remove_stale_training_artifacts");
+    expect(code).not.toContain('assert meta.get("identity") == SNAPSHOT_IDENTITY');
     expect(code).toContain("bootstrap_dataset_snapshot()");
     expect(code).toContain("copy_dataset_snapshot");
     expect(code).toContain("PREPARE_REAL_MANUSCRIPT_DATA = False");

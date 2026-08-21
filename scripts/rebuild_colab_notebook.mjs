@@ -434,6 +434,31 @@ def copy_dataset_snapshot(source, destination):
         shutil.rmtree(destination)
     os.replace(temporary, destination)
 
+SNAPSHOT_REGENERATED_FOR_CURRENT_STAGE = False
+
+def snapshot_meta_from_dataset():
+    return {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "identity": SNAPSHOT_IDENTITY,
+        "tree": tree_summary(DATASET_ROOT),
+        "manifest_sha256": sha256_file(DATASET_ROOT / "manifest.json"),
+        "class_map_sha256": sha256_file(DATASET_ROOT / "class_map.json"),
+        "assets_sha256": sha256_file(DATASET_ROOT / "assets.jsonl"),
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+def remove_stale_training_artifacts():
+    # لا يحمل وزنًا أو عقدًا يخص snapshot مختلف إلى تجربة المرحلة الجديدة.
+    for name in ("last.pt", "results.csv", "data_contract.json", "resume_state.json"):
+        stale = CHECKPOINT_EXPERIMENT_DIR / name
+        if stale.exists():
+            stale.unlink()
+    latest = CHECKPOINT_ROOT / "latest.json"
+    if latest.is_file():
+        latest_payload = json.loads(latest.read_text(encoding="utf-8"))
+        if latest_payload.get("experiment_name") == EXPERIMENT_NAME:
+            latest.unlink()
+
 def current_resume_contract():
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
@@ -487,20 +512,25 @@ def push_checkpoint_branch():
         )
 
 def ensure_dataset_snapshot():
+    global SNAPSHOT_REGENERATED_FOR_CURRENT_STAGE
     if CHECKPOINT_DATASET_META.is_file() and CHECKPOINT_DATASET_DIR.is_dir():
         meta = json.loads(CHECKPOINT_DATASET_META.read_text(encoding="utf-8"))
-        assert meta.get("identity") == SNAPSHOT_IDENTITY, "snapshot البيانات الموجود يخص إعدادًا مختلفًا."
+        if meta.get("identity") == SNAPSHOT_IDENTITY:
+            return meta
+        stale_stage = meta.get("identity", {}).get("stage", "?")
+        print(
+            f"snapshot البيانات الموجود يخص مرحلة أو إعدادًا مختلفًا ({stale_stage})؛ "
+            f"سيُعاد توليد {STAGE} حتميًا ثم سيُستبدل snapshotها على GitHub."
+        )
+        remove_stale_training_artifacts()
+        copy_dataset_snapshot(DATASET_ROOT, CHECKPOINT_DATASET_DIR)
+        meta = snapshot_meta_from_dataset()
+        atomic_json(CHECKPOINT_DATASET_META, meta)
+        SNAPSHOT_REGENERATED_FOR_CURRENT_STAGE = True
+        print(f"أُعيد إنشاء snapshot بيانات {STAGE}: {meta['tree']['file_count']} ملفًا، {meta['tree']['bytes']} بايت.")
         return meta
     copy_dataset_snapshot(DATASET_ROOT, CHECKPOINT_DATASET_DIR)
-    meta = {
-        "schema_version": SNAPSHOT_SCHEMA_VERSION,
-        "identity": SNAPSHOT_IDENTITY,
-        "tree": tree_summary(CHECKPOINT_DATASET_DIR),
-        "manifest_sha256": sha256_file(CHECKPOINT_DATASET_DIR / "manifest.json"),
-        "class_map_sha256": sha256_file(CHECKPOINT_DATASET_DIR / "class_map.json"),
-        "assets_sha256": sha256_file(CHECKPOINT_DATASET_DIR / "assets.jsonl"),
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
-    }
+    meta = snapshot_meta_from_dataset()
     atomic_json(CHECKPOINT_DATASET_META, meta)
     print(f"أُنشئ snapshot بيانات {STAGE}: {meta['tree']['file_count']} ملفًا، {meta['tree']['bytes']} بايت.")
     return meta
@@ -519,9 +549,9 @@ def bootstrap_dataset_snapshot():
     ensure_checkpoint_repo()
     existed = CHECKPOINT_DATASET_META.is_file() and CHECKPOINT_DATASET_DIR.is_dir()
     meta = ensure_dataset_snapshot()
-    if not existed:
+    if not existed or SNAPSHOT_REGENERATED_FOR_CURRENT_STAGE:
         commit_and_push_checkpoint_tree(f"dataset snapshot: {EXPERIMENT_NAME}")
-        print("دُفع snapshot بيانات المرحلة إلى GitHub قبل التدريب.")
+        print("دُفع snapshot بيانات المرحلة المتحقق إلى GitHub قبل التدريب.")
     return meta
 
 def publish_latest_checkpoint(state):
