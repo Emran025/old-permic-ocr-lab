@@ -1,11 +1,12 @@
 import React from "react";
-import { BookMarked, History, Images, ScanSearch, Sparkles, Wand2 } from "lucide-react";
+import { BookMarked, History, Images, ScanSearch, Sparkles, Tags, Wand2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 const links = [
   { href: "/", label: "التحليل", icon: ScanSearch },
   { href: "/sources", label: "المصادر", icon: Images },
   { href: "/synthetic", label: "الصناعي", icon: Wand2 },
+  { href: "/labeler", label: "الوسم", icon: Tags },
   { href: "/generator-notebook", label: "دفتر التوليد", icon: BookMarked },
   { href: "/history", label: "السجل", icon: History },
 ];

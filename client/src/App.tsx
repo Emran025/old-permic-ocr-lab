@@ -8,6 +8,7 @@ import Documentation from "./pages/Documentation";
 import GeneratorNotebook from "./pages/GeneratorNotebook";
 import History from "./pages/History";
 import Home from "./pages/Home";
+import OldPermicLabeler from "./pages/OldPermicLabeler";
 import SourceLibrary from "./pages/SourceLibrary";
 import SyntheticLab from "./pages/SyntheticLab";
 
@@ -18,6 +19,7 @@ function Router() {
       <Route path={"/"} component={Home} />
       <Route path={"/sources"} component={SourceLibrary} />
       <Route path={"/synthetic"} component={SyntheticLab} />
+      <Route path={"/labeler"} component={OldPermicLabeler} />
       <Route path={"/generator-notebook"} component={GeneratorNotebook} />
       <Route path={"/history"} component={History} />
       <Route path={"/documentation"} component={Documentation} />
