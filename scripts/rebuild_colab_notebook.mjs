@@ -225,12 +225,15 @@ if clone_checkpoint_branch_readonly():
     SNAPSHOT_META_PATH = SNAPSHOT_EXPERIMENT_DIR / "dataset_snapshot.json"
     if SNAPSHOT_DATASET_DIR.is_dir() and SNAPSHOT_META_PATH.is_file():
         snapshot_meta = json.loads(SNAPSHOT_META_PATH.read_text(encoding="utf-8"))
-        assert snapshot_meta.get("identity") == SNAPSHOT_IDENTITY, (
-            "يوجد snapshot لكن هويته لا تطابق المرحلة أو المولد أو الخط الحالي؛ لا يستعاد تلقائيًا."
-        )
-        atomic_copytree(SNAPSHOT_DATASET_DIR, DATASET_ROOT)
-        SNAPSHOT_RESTORED_FROM_GITHUB = True
-        print(f"استُعيد snapshot بيانات {STAGE} من GitHub: {snapshot_meta['tree']['file_count']} ملفًا.")
+        if snapshot_meta.get("identity") == SNAPSHOT_IDENTITY:
+            atomic_copytree(SNAPSHOT_DATASET_DIR, DATASET_ROOT)
+            SNAPSHOT_RESTORED_FROM_GITHUB = True
+            print(f"استُعيد snapshot بيانات {STAGE} من GitHub: {snapshot_meta['tree']['file_count']} ملفًا.")
+        else:
+            print(
+                "وُجد snapshot غير مطابق للمرحلة أو المولد أو الخط؛ "
+                "لن يُستعاد ولن يُحذف. ستنشئ المرحلة الحالية بياناتها الحتمية المستقلة."
+            )
     else:
         print("لا توجد بيانات snapshot متوافقة بعد؛ سيجري التوليد الحتمي المحلي.")
 `, "restore-dataset-snapshot"),
