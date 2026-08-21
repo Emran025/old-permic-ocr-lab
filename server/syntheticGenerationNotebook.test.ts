@@ -20,7 +20,11 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("# 9) Snapshot كامل وقابل للاستئناف من GitHub");
     expect(code).toContain("import os");
     expect(code).toContain("FORCE_REGENERATE_DATASET = False");
-    expect(code).toContain("BATCH_CANDIDATES = (8, 6, 4)");
+    expect(code).toContain("TRAINING_PLANS = {");
+    expect(code).toContain('"S0": {"epochs": 100, "batch_candidates": (8, 6, 4)');
+    expect(code).toContain('"layout": "scattered-glyph"');
+    expect(code).toContain('"batch_candidates": (32, 24, 16, 12, 8)');
+    expect(code).toContain('"epochs": 60');
     expect(code).toContain("report_gpu_memory");
     expect(code).toContain("torch.cuda.empty_cache()");
     expect(code).toContain("SNAPSHOT_RESTORED_FROM_GITHUB");

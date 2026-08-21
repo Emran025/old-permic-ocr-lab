@@ -146,7 +146,7 @@ print(json.dumps({"source_commit": SOURCE_COMMIT, "font_sha256": FONT_SHA256, "c
 | المرحلة | الغاية | المدخل الافتراضي | قاعدة التقدم |
 |---|---|---|---|
 | S0 | حرف واحد كبير ومتمركز | "unicode-clean" | فحص فئات ووسوم ومعاينة قبل التدريب |
-| S0-d1 | متانة أولية دون خط تاريخي | "controlled-deformation" | تجربة منفصلة عن S0 |
+| S0-d1 | محرف أصغر في موضع صفحة متغير مع تشويه مضبوط | "controlled-deformation" + "scattered-glyph" | تجربة منفصلة عن S0؛ لا تكرر تمركز S0 |
 | S1 | أسطر محارف منظمة | "manuscript-inspired" | لا تبدأ قبل قبول S0-d1 |
 | S2 | صفحات بعمود أو عمودين | "manuscript-inspired" | لا تبدأ قبل مراجعة S1 |
 `, "curriculum"),
@@ -163,8 +163,8 @@ CURRICULUM = {
         "seed": 10350, "image_size": 640, "font_size": 48, "balanced_classes": True, "workers": 6,
     },
     "S0-d1": {
-        "profile": "controlled-deformation", "layout": "isolated-glyph", "samples": 7600,
-        "seed": 20350, "image_size": 640, "font_size": 48, "balanced_classes": True, "workers": 6,
+        "profile": "controlled-deformation", "layout": "scattered-glyph", "samples": 7600,
+        "seed": 20350, "image_size": 640, "font_size": 36, "balanced_classes": True, "workers": 6,
     },
     "S1": {
         "profile": "manuscript-inspired", "layout": "ordered-lines", "samples": 1000,
@@ -353,18 +353,26 @@ from datetime import datetime, timezone
 MODEL_YAML = "yolov8n.yaml"
 INITIALIZATION = "from_scratch"
 assert INITIALIZATION == "from_scratch", "warm start يحتاج بروتوكول تجربة منفصل ولا يستخدم في baseline."
-EPOCHS = 100
+TRAINING_PLANS = {
+    # S0 المرجعية المؤرشفة: لا تُعدل لضمان بقاء المقارنة التاريخية ممكنة.
+    "S0": {"epochs": 100, "batch_candidates": (8, 6, 4), "eval_batch_size": 8, "experiment_name": "old_permic_s0_baseline_v2_batch8"},
+    # S0-d أصغر ومحرف واحد موزع على الصفحة؛ يختبر batch 32 أولًا ثم يرجع آليًا فقط عند OOM.
+    "S0-d1": {"epochs": 60, "batch_candidates": (32, 24, 16, 12, 8), "eval_batch_size": 16, "experiment_name": "old_permic_s0_d1_scattered_v1_batch32_e60"},
+    # S1/S2 تظل منظمة بصريًا بعقودها الخاصة، مع خطط ذاكرة مستقلة عن S0-d.
+    "S1": {"epochs": 70, "batch_candidates": (16, 12, 8, 6, 4), "eval_batch_size": 8, "experiment_name": "old_permic_s1_lines_v1_batch16_e70"},
+    "S2": {"epochs": 80, "batch_candidates": (12, 8, 6, 4), "eval_batch_size": 6, "experiment_name": "old_permic_s2_pages_v1_batch12_e80"},
+}
+TRAINING_PLAN = TRAINING_PLANS[STAGE]
+EPOCHS = TRAINING_PLAN["epochs"]
 IMAGE_SIZE = 960
-# يبدأ S0 بضعف batch السابق (4 -> 8) لتحسين الاستفادة من T4، ثم يعود تلقائيًا
-# إلى 6 أو 4 فقط عند CUDA OOM. لا يرفع IMAGE_SIZE لأن ذلك يغير عقد baseline.
-BATCH_CANDIDATES = (8, 6, 4)
-EVAL_BATCH_SIZE = 8
+BATCH_CANDIDATES = TRAINING_PLAN["batch_candidates"]
+EVAL_BATCH_SIZE = TRAINING_PLAN["eval_batch_size"]
 WORKERS = min(4, os.cpu_count() or 2)
 AMP = True
 DATASET_CACHE = False
 DEVICE = 0
 SEED = 20260819
-EXPERIMENT_NAME = f"old_permic_{STAGE.lower().replace('-', '_')}_baseline_v2_batch8"
+EXPERIMENT_NAME = TRAINING_PLAN["experiment_name"]
 RUNS_ROOT = WORKSPACE / "runs"
 RUN_DIR = RUNS_ROOT / EXPERIMENT_NAME
 STATE_DIR = WORKSPACE / "training_state" / EXPERIMENT_NAME
@@ -375,7 +383,7 @@ LOCAL_STATE_JSON = STATE_DIR / "resume_state.json"
 LOCAL_CONTRACT_JSON = STATE_DIR / "data_contract.json"
 
 print(json.dumps({
-    "experiment": EXPERIMENT_NAME, "epochs": EPOCHS, "imgsz": IMAGE_SIZE,
+    "experiment": EXPERIMENT_NAME, "training_plan": TRAINING_PLAN, "epochs": EPOCHS, "imgsz": IMAGE_SIZE,
     "batch_candidates": BATCH_CANDIDATES, "eval_batch": EVAL_BATCH_SIZE,
     "workers": WORKERS, "amp": AMP, "stage": STAGE,
 }, ensure_ascii=False, indent=2))
