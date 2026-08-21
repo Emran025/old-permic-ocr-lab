@@ -28,6 +28,8 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("report_gpu_memory");
     expect(code).toContain("torch.cuda.empty_cache()");
     expect(code).toContain("SNAPSHOT_RESTORED_FROM_GITHUB");
+    expect(code).toContain("snapshot غير مطابق للمرحلة أو المولد أو الخط");
+    expect(code).toContain("ستنشئ المرحلة الحالية بياناتها الحتمية المستقلة");
     expect(code).toContain("bootstrap_dataset_snapshot()");
     expect(code).toContain("copy_dataset_snapshot");
   });
