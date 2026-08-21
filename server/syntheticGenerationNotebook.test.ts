@@ -68,6 +68,12 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("TRAINING_ALREADY_COMPLETE");
     expect(code).toContain('restored_epoch >= EPOCHS');
     expect(code).toContain("لن يُستدعى resume=True");
+    expect(code).toContain('"S0-d1": {');
+    expect(code).toContain('"source_branch": "s0-epoch100-checkpoint"');
+    expect(code).toContain("prepare_initialization_weight");
+    expect(code).toContain("initialization_weight = None if restored_checkpoint else prepare_initialization_weight()");
+    expect(code).toContain("warm_start_from_");
+    expect(code).toContain("initialization_weight_sha256");
     expect(code).toContain("last_pt_sha256");
     expect(code).toContain("save_period=1");
     expect(code).toContain("dataset_snapshot.json");
