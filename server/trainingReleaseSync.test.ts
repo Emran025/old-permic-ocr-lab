@@ -1,10 +1,35 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { fetchPublishedTrainingRelease } from "./trainingReleaseSync";
+import { fetchPublicTrainingCheckpoint, fetchPublishedTrainingRelease } from "./trainingReleaseSync";
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
 describe("public training release sync", () => {
+  it("accepts a public resumable checkpoint without treating it as a published release", async () => {
+    const checkpoint = {
+      schema_version: 2,
+      experiment_name: "old_permic_s0_baseline_v2_batch8",
+      stage: "S0",
+      checkpoint_path: "checkpoints/old_permic_s0_baseline_v2_batch8",
+      saved_after_epoch: 34,
+      last_pt_sha256: "a".repeat(64),
+      dataset_snapshot: {
+        schema_version: 2,
+        tree: { file_count: 15205, bytes: 87148829 },
+        manifest_sha256: "b".repeat(64),
+        class_map_sha256: "c".repeat(64),
+      },
+    };
+    const result = await fetchPublicTrainingCheckpoint(async () => new Response(JSON.stringify(checkpoint), { status: 200 }));
+
+    expect(result.checkpoint.saved_after_epoch).toBe(34);
+    expect(result.checkpoint.dataset_snapshot.tree.file_count).toBe(15205);
+  });
+
+  it("reports a missing public checkpoint explicitly", async () => {
+    await expect(fetchPublicTrainingCheckpoint(async () => new Response("not found", { status: 404 }))).rejects.toThrow("NO_CHECKPOINT");
+  });
+
   it("accepts only a release whose pointer and declared metadata hashes match", async () => {
     const metricsText = JSON.stringify({ test_metrics: { map50_95: 0.5 }, interpretation: "synthetic baseline only" });
     const contractText = JSON.stringify({ class_map_sha256: "a".repeat(64), real_manuscripts_included: false });

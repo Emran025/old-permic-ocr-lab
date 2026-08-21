@@ -27,6 +27,7 @@ export default function GeneratorNotebook() {
   const releaseQuery = trpc.trainingRelease.status.useQuery(undefined, { refetchInterval: 5 * 60 * 1000 });
   const release = releaseQuery.data?.release;
   const sync = releaseQuery.data?.sync;
+  const checkpointStatus = releaseQuery.data?.checkpointStatus;
 
   const refresh = () => {
     setRefreshKey((key) => key + 1);
@@ -81,6 +82,28 @@ export default function GeneratorNotebook() {
           ) : <div className="mt-5 rounded-2xl border border-dashed border-[#d7ded0] bg-[#fbfcf9] p-4 text-sm leading-7 text-[#687365]">ينتظر المختبر نشر Colab لأول ملف <span className="font-mono">artifacts/published/latest.json</span>. ستظهر هنا فقط النتائج التي اجتازت اختبار test وبصمات الملف المطلوبة.</div>}
           {sync?.lastError ? <p className="mt-4 rounded-xl bg-[#fff4ee] px-4 py-3 text-xs leading-6 text-[#9a5736]">تعذر آخر فحص: {sync.lastError}</p> : null}
           <div className="mt-4 flex items-center gap-2 text-xs text-[#657365]"><ShieldCheck className="size-4 text-[#48774c]" />لا تُنقل حزم الصور الصناعية الكاملة إلى الموقع أو المستودع من هذه الآلية.</div>
+        </section>
+
+        <section className="mt-5 rounded-3xl border border-[#cddcc8] bg-[#f5f8f2] p-5 shadow-[0_12px_28px_rgba(52,56,43,0.04)]">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="flex gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-[#dcebd8] text-[#315442]"><ShieldCheck className="size-5" /></span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2"><h2 className="font-serif text-xl text-[#24372e]">حالة نقطة الاستئناف الصناعية</h2>{checkpointStatus?.kind === "available" ? <Badge className="border-0 bg-[#dcebd8] text-[#35633f]">Snapshot قابل للاستئناف</Badge> : <Badge variant="outline" className="border-[#d9c8aa] bg-[#fffaf1] text-[#846539]">لا توجد حالة متحققة</Badge>}</div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-[#657065]">هذه قراءة عامة من فرع checkpoints تحفظ التقدم والبيانات اللازمة للاستئناف. لا تعني نشر وزن للاستدلال، ولا تمثل تقييم test أو صلاحية OCR للمخطوطات.</p>
+              </div>
+            </div>
+            {checkpointStatus?.kind === "available" ? <a href={checkpointStatus.pointerUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#2b4b40] underline underline-offset-4">فتح حالة GitHub</a> : null}
+          </div>
+
+          {checkpointStatus?.kind === "available" ? (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl bg-white p-4"><p className="text-xs text-[#758070]">التجربة / المرحلة</p><p className="mt-2 font-mono text-xs font-semibold text-[#2c493b]">{checkpointStatus.checkpoint.experiment_name}</p><p className="mt-1 text-sm text-[#64736a]">{checkpointStatus.checkpoint.stage}</p></div>
+              <div className="rounded-2xl bg-white p-4"><p className="text-xs text-[#758070]">آخر epoch محفوظ</p><p className="mt-2 font-mono text-xl font-semibold text-[#2c493b]">{checkpointStatus.checkpoint.saved_after_epoch}</p></div>
+              <div className="rounded-2xl bg-white p-4"><p className="text-xs text-[#758070]">ملفات snapshot</p><p className="mt-2 font-mono text-xl font-semibold text-[#2c493b]">{checkpointStatus.checkpoint.dataset_snapshot.tree.file_count.toLocaleString("ar-SA")}</p></div>
+              <div className="rounded-2xl bg-white p-4"><p className="text-xs text-[#758070]">حالة النموذج</p><p className="mt-2 text-sm font-semibold text-[#7a5630]">غير منشور للاستدلال</p></div>
+            </div>
+          ) : <div className="mt-5 rounded-2xl border border-dashed border-[#d7ded0] bg-white p-4 text-sm leading-7 text-[#687365]">{checkpointStatus?.kind === "unavailable" ? `تعذر قراءة checkpoint: ${checkpointStatus.error}` : "ينتظر المختبر أول snapshot استئناف عام من Colab."}</div>}
         </section>
 
         <section className="mt-7 overflow-hidden rounded-3xl border border-[#d8d1c4] bg-white shadow-[0_16px_34px_rgba(52,56,43,0.08)]"><iframe key={refreshKey} title="دفتر Jupyter لتوليد وتدريب البرمية القديمة" src={`${renderedNotebookUrl}?refresh=${refreshKey}`} className="h-[calc(100vh-230px)] min-h-[760px] w-full bg-white" loading="lazy" referrerPolicy="no-referrer" /></section>
