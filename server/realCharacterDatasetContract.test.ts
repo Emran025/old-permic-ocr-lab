@@ -20,16 +20,23 @@ describe("real character dataset contract", () => {
     expect(classMap.classes.map((entry: { id: number }) => entry.id)).toEqual([...Array(38).keys()]);
     expect(regions.regions).toHaveLength(12);
     const verified = instances.trim().split("\n").map((line) => JSON.parse(line));
-    expect(verified).toHaveLength(12);
+    expect(verified).toHaveLength(17);
     expect(verified.every((entry: { review_status: string }) => entry.review_status === "verified")).toBe(true);
     expect(verified.map((entry: { unicode_codepoint: string }) => entry.unicode_codepoint)).toEqual([
       "U+10350", "U+10362", "U+10350", "U+1035D", "U+10354", "U+10351", "U+10354", "U+10352",
       "U+10350", "U+1035C", "U+10359", "U+1035D",
+      "U+1035A", "U+10359", "U+1035B", "U+10357", "U+10359",
     ]);
     expect(new Set(verified.map((entry: { source_id: string }) => entry.source_id))).toEqual(new Set([
-      "volok-11-f271v", "likh-360-f274",
+      "volok-11-f271v", "likh-360-f274", "egor-326-f162",
     ]));
-    expect(exporter).toContain("len(source_ids) >= 3");
+    const annotationUnitIds = new Set(sources.annotation_units.map((entry: { id: string }) => entry.id));
+    expect(verified.every((entry: { source_id: string }) => annotationUnitIds.has(entry.source_id))).toBe(true);
+    expect(regions.regions.find((entry: { crop_id: string }) => entry.crop_id === "volok11-f271v-text")).toMatchObject({
+      annotation_unit_id: "volok-11-f271v",
+    });
+    expect(exporter).toContain("source_split_eligible = len(source_ids) >= 3");
+    expect(exporter).toContain("classes_without_three_source_coverage");
     expect(exporter).toContain("source-disjoint train/val/test splits");
   });
 });

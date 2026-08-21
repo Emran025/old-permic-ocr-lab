@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Export only evidence-backed real Old Permic annotations into YOLO preview assets.
 
-The exporter deliberately refuses to call the output trainable until at least
-three distinct manuscript sources have verified glyphs, so that source-level
-train/val/test separation can be enforced.
+Three manuscript sources make a source-disjoint split *possible*, but do not
+by themselves make a 38-class detector trainable.  Each represented class
+must occur in all three independent sources; otherwise a held-out split would
+contain classes absent from its training partition or evaluation partition.
 """
 
 from __future__ import annotations
@@ -68,13 +69,38 @@ def main() -> None:
         destination_label.write_text("\n".join(label_lines) + "\n", encoding="utf-8")
         assets.append({"crop_id": crop_id, "source_ids": sorted({entry["source_id"] for entry in entries}), "instances": len(entries), "image_sha256": sha256_file(destination_image), "label_sha256": sha256_file(destination_label)})
     source_ids = sorted({entry["source_id"] for entry in verified})
+    class_source_coverage: dict[str, set[str]] = defaultdict(set)
+    for entry in verified:
+        class_source_coverage[entry["unicode_codepoint"]].add(entry["source_id"])
+    source_split_eligible = len(source_ids) >= 3
+    class_coverage = {
+        entry["codepoint"]: sorted(class_source_coverage.get(entry["codepoint"], set()))
+        for entry in classes
+    }
+    insufficient_codepoints = [
+        codepoint for codepoint, covered_sources in class_coverage.items()
+        if len(covered_sources) < 3
+    ]
+    trainable = source_split_eligible and not insufficient_codepoints
+    if not source_split_eligible:
+        training_blocker = "Need verified glyphs from at least three distinct sources before source-disjoint train/val/test splits."
+    elif insufficient_codepoints:
+        training_blocker = (
+            "Source-disjoint split is structurally possible, but real-data training is blocked: "
+            f"{len(insufficient_codepoints)} of {len(classes)} classes lack verified examples from all three sources."
+        )
+    else:
+        training_blocker = None
     manifest = {
         "kind": "old-permic-real-character-yolo-preview",
         "verified_instances": len(verified),
         "sources": source_ids,
         "assets": assets,
-        "trainable": len(source_ids) >= 3,
-        "training_blocker": None if len(source_ids) >= 3 else "Need verified glyphs from at least three distinct sources before source-disjoint train/val/test splits.",
+        "source_split_eligible": source_split_eligible,
+        "class_source_coverage": class_coverage,
+        "classes_without_three_source_coverage": insufficient_codepoints,
+        "trainable": trainable,
+        "training_blocker": training_blocker,
     }
     (output_root / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
