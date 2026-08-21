@@ -84,7 +84,7 @@ export default function OldPermicLabeler() {
         id: `${start}-${index}-${file.name}`,
         file,
         name: file.name,
-        exportName: `${String(index + 1).padStart(3, "0")}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
+        exportName: `${String(images.length + index + 1).padStart(3, "0")}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
         url,
         width: 0,
         height: 0,
