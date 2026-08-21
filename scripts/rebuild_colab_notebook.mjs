@@ -849,46 +849,62 @@ from ultralytics import YOLO
 RESTORE_LATEST_GITHUB_CHECKPOINT = True
 bootstrap_dataset_snapshot()
 restored_checkpoint = RESTORE_LATEST_GITHUB_CHECKPOINT and restore_latest_checkpoint_from_github()
+TRAINING_ALREADY_COMPLETE = False
 
 if restored_checkpoint:
     assert_resume_is_compatible()
+    restored_state = json.loads(LOCAL_STATE_JSON.read_text(encoding="utf-8"))
+    restored_epoch = int(restored_state["saved_after_epoch"])
+    TRAINING_ALREADY_COMPLETE = restored_epoch >= EPOCHS
+    if TRAINING_ALREADY_COMPLETE:
+        print(
+            f"checkpoint عند epoch {restored_epoch}/{EPOCHS} مكتمل؛ "
+            "لن يُستدعى resume=True. انتقل الآن إلى خلية test-evaluation ثم build-release."
+        )
 
 def is_cuda_oom(error):
     message = str(error).lower()
     return "out of memory" in message or "cuda error: out of memory" in message
 
-last_oom = None
-for EFFECTIVE_BATCH_SIZE in BATCH_CANDIDATES:
-    try:
-        print(f"بدء التدريب مع batch={EFFECTIVE_BATCH_SIZE}؛ candidates={BATCH_CANDIDATES}")
-        model = YOLO(str(LOCAL_LAST_PT)) if restored_checkpoint else YOLO(MODEL_YAML)
-        add_training_callbacks(model)
-        if restored_checkpoint:
-            results = model.train(
-                resume=True, batch=EFFECTIVE_BATCH_SIZE, workers=WORKERS,
-                amp=AMP, cache=DATASET_CACHE,
-            )
-        else:
-            results = model.train(
-                data=str(DATA_YAML), epochs=EPOCHS, imgsz=IMAGE_SIZE, batch=EFFECTIVE_BATCH_SIZE, device=DEVICE,
-                workers=WORKERS, amp=AMP, cache=DATASET_CACHE, project=str(RUNS_ROOT), name=EXPERIMENT_NAME,
-                exist_ok=True, pretrained=False, seed=SEED, deterministic=True, plots=True, save=True, save_period=1,
-            )
-        break
-    except RuntimeError as error:
-        if not is_cuda_oom(error) or EFFECTIVE_BATCH_SIZE == BATCH_CANDIDATES[-1]:
-            raise
-        last_oom = error
-        torch.cuda.empty_cache()
-        print(f"نفدت الذاكرة مع batch={EFFECTIVE_BATCH_SIZE}؛ إعادة المحاولة آليًا بحجم أصغر.")
+if TRAINING_ALREADY_COMPLETE:
+    model = YOLO(str(LOCAL_LAST_PT))
+    results = None
+    RUN_DIR = STATE_DIR
+    # لا يضمن snapshot بعد كل epoch وجود best.pt؛ last.pt النهائي هو الوزن الموثق للتقييم فقط.
+    BEST_PT = LOCAL_LAST_PT
 else:
-    raise RuntimeError(f"فشلت كل أحجام batch: {BATCH_CANDIDATES}") from last_oom
+    last_oom = None
+    for EFFECTIVE_BATCH_SIZE in BATCH_CANDIDATES:
+        try:
+            print(f"بدء التدريب مع batch={EFFECTIVE_BATCH_SIZE}؛ candidates={BATCH_CANDIDATES}")
+            model = YOLO(str(LOCAL_LAST_PT)) if restored_checkpoint else YOLO(MODEL_YAML)
+            add_training_callbacks(model)
+            if restored_checkpoint:
+                results = model.train(
+                    resume=True, batch=EFFECTIVE_BATCH_SIZE, workers=WORKERS,
+                    amp=AMP, cache=DATASET_CACHE,
+                )
+            else:
+                results = model.train(
+                    data=str(DATA_YAML), epochs=EPOCHS, imgsz=IMAGE_SIZE, batch=EFFECTIVE_BATCH_SIZE, device=DEVICE,
+                    workers=WORKERS, amp=AMP, cache=DATASET_CACHE, project=str(RUNS_ROOT), name=EXPERIMENT_NAME,
+                    exist_ok=True, pretrained=False, seed=SEED, deterministic=True, plots=True, save=True, save_period=1,
+                )
+            break
+        except RuntimeError as error:
+            if not is_cuda_oom(error) or EFFECTIVE_BATCH_SIZE == BATCH_CANDIDATES[-1]:
+                raise
+            last_oom = error
+            torch.cuda.empty_cache()
+            print(f"نفدت الذاكرة مع batch={EFFECTIVE_BATCH_SIZE}؛ إعادة المحاولة آليًا بحجم أصغر.")
+    else:
+        raise RuntimeError(f"فشلت كل أحجام batch: {BATCH_CANDIDATES}") from last_oom
 
-RUN_DIR = Path(model.trainer.save_dir) if getattr(model, "trainer", None) else RUN_DIR
-BEST_PT = RUN_DIR / "weights" / "best.pt"
+    RUN_DIR = Path(model.trainer.save_dir) if getattr(model, "trainer", None) else RUN_DIR
+    BEST_PT = RUN_DIR / "weights" / "best.pt"
 assert BEST_PT.is_file(), f"لم يعثر على best.pt في {BEST_PT}"
 atomic_copy(BEST_PT, STATE_DIR / "best.pt")
-print("اكتمل التدريب أو الاستئناف. أفضل وزن:", BEST_PT)
+print("اكتمل التدريب أو الاستئناف، أو جرى تجهيز الوزن النهائي للتقييم:", BEST_PT)
 `, "training-run"),
 
   code("test-evaluation", `
