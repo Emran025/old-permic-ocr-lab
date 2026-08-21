@@ -32,7 +32,9 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("ستنشئ المرحلة الحالية بياناتها الحتمية المستقلة");
     expect(code).toContain("SNAPSHOT_REGENERATED_FOR_CURRENT_STAGE");
     expect(code).toContain("سيُعاد توليد {STAGE} حتميًا ثم سيُستبدل snapshotها على GitHub");
-    expect(code).toContain("remove_stale_training_artifacts");
+    expect(code).toContain("snapshot_matches_training_contract");
+    expect(code).toContain("الاحتفاظ ");
+    expect(code).toContain("remove_incompatible_training_artifacts");
     expect(code).not.toContain('assert meta.get("identity") == SNAPSHOT_IDENTITY');
     expect(code).toContain("bootstrap_dataset_snapshot()");
     expect(code).toContain("copy_dataset_snapshot");
@@ -68,6 +70,7 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("GITHUB_WRITE_TOKEN");
     expect(code).toContain("legacy_checkpoint");
     expect(code).toContain("قُبل اختلاف manifest بعد تحقق الفئات وسجل الأصول وهوية snapshot");
+    expect(prose).toContain("لا يحذف `last.pt` أو `resume_state.json`");
     expect(code).toContain("evaluation_model.val");
     expect(code).toContain("release.json");
     expect(code).toContain("PUBLISH_RELEASE = False");
