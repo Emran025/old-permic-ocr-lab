@@ -346,7 +346,7 @@ plt.show()
   markdown("training-gate", `
 ## بوابة التدريب
 
-ابدأ baseline بـS0 وحدها. قارن S0-d1 كتجربة منفصلة، ثم انقل نفس بروتوكول التجربة إلى S1 وS2. لا تعني نتيجة جيدة على هذه البيانات المصنوعة أن النموذج يتعرف على مخطوطات أصلية. لا تستخدم warm start من لغة أخرى ما لم تسجل التجربة، تعيد بناء رأس الكشف، وتقارنها بخط أساس من الصفر.
+ابدأ baseline بـS0 وحدها. بعد قبولها، تبدأ S0-d1 من وزن S0 المؤرشف لكن ببياناتها وoptimizer وcheckpoint منفصلة؛ هذا تكييف مرحلي وليس resume لـS0. ينطبق العقد نفسه على S1 وS2 بعد اكتمال المرحلة السابقة. لا تعني نتيجة جيدة على هذه البيانات المصنوعة أن النموذج يتعرف على مخطوطات أصلية. لا تستخدم warm start من لغة أخرى ما لم تسجل التجربة، تعيد بناء رأس الكشف، وتقارنها بخط أساس من الصفر.
 `, "training-gate"),
 
   code("training-config", `
@@ -354,8 +354,6 @@ plt.show()
 from datetime import datetime, timezone
 
 MODEL_YAML = "yolov8n.yaml"
-INITIALIZATION = "from_scratch"
-assert INITIALIZATION == "from_scratch", "warm start يحتاج بروتوكول تجربة منفصل ولا يستخدم في baseline."
 TRAINING_PLANS = {
     # S0 المرجعية المؤرشفة: لا تُعدل لضمان بقاء المقارنة التاريخية ممكنة.
     "S0": {"epochs": 100, "batch_candidates": (8, 6, 4), "eval_batch_size": 8, "experiment_name": "old_permic_s0_baseline_v2_batch8"},
@@ -366,6 +364,33 @@ TRAINING_PLANS = {
     "S2": {"epochs": 80, "batch_candidates": (12, 8, 6, 4), "eval_batch_size": 6, "experiment_name": "old_permic_s2_pages_v1_batch12_e80"},
 }
 TRAINING_PLAN = TRAINING_PLANS[STAGE]
+STAGE_INITIALIZATION = {
+    "S0": None,
+    # هذه البصمة تثبت وزن S0 المؤرشف عند epoch 100 ولا تعتمد على آخر فرع متحرك.
+    "S0-d1": {
+        "source_stage": "S0",
+        "source_experiment": "old_permic_s0_baseline_v2_batch8",
+        "source_branch": "s0-epoch100-checkpoint",
+        "required_epochs": 100,
+        "expected_last_pt_sha256": "db7ce494805f3c49505e30736eaec086c49f919b4192ad752c67c14c8a445bb2",
+    },
+    "S1": {
+        "source_stage": "S0-d1",
+        "source_experiment": "old_permic_s0_d1_scattered_v1_batch32_e60",
+        "source_branch": "colab-checkpoints",
+        "required_epochs": 60,
+        "expected_last_pt_sha256": None,
+    },
+    "S2": {
+        "source_stage": "S1",
+        "source_experiment": "old_permic_s1_lines_v1_batch16_e70",
+        "source_branch": "colab-checkpoints",
+        "required_epochs": 70,
+        "expected_last_pt_sha256": None,
+    },
+}
+INITIALIZATION_SPEC = STAGE_INITIALIZATION[STAGE]
+INITIALIZATION = "from_scratch" if INITIALIZATION_SPEC is None else f"warm_start_from_{INITIALIZATION_SPEC['source_stage']}"
 EPOCHS = TRAINING_PLAN["epochs"]
 IMAGE_SIZE = 960
 BATCH_CANDIDATES = TRAINING_PLAN["batch_candidates"]
@@ -384,11 +409,14 @@ LOCAL_LAST_PT = STATE_DIR / "last.pt"
 LOCAL_RESULTS_CSV = STATE_DIR / "results.csv"
 LOCAL_STATE_JSON = STATE_DIR / "resume_state.json"
 LOCAL_CONTRACT_JSON = STATE_DIR / "data_contract.json"
+INITIALIZATION_SOURCE_PT = STATE_DIR / "initialization_source.pt"
+INITIALIZATION_WEIGHT_SHA256 = None
 
 print(json.dumps({
     "experiment": EXPERIMENT_NAME, "training_plan": TRAINING_PLAN, "epochs": EPOCHS, "imgsz": IMAGE_SIZE,
     "batch_candidates": BATCH_CANDIDATES, "eval_batch": EVAL_BATCH_SIZE,
-    "workers": WORKERS, "amp": AMP, "stage": STAGE,
+    "workers": WORKERS, "amp": AMP, "stage": STAGE, "initialization": INITIALIZATION,
+    "initialization_spec": INITIALIZATION_SPEC,
 }, ensure_ascii=False, indent=2))
 `, "training-config"),
 
@@ -480,7 +508,51 @@ def current_resume_contract():
         "assets_sha256": DATA_CONTRACT["assets_sha256"],
         "model_yaml": MODEL_YAML,
         "initialization": INITIALIZATION,
+        "initialization_spec": INITIALIZATION_SPEC,
     }
+
+def prepare_initialization_weight():
+    """يجلب وزن المرحلة المقبولة السابقة للتهيئة فقط، ولا ينسخ optimizer أو حالة resume."""
+    global INITIALIZATION_WEIGHT_SHA256
+    if INITIALIZATION_SPEC is None:
+        return None
+    initialization_repo = Path("/content/old-permic-initialization-source")
+    if initialization_repo.exists():
+        shutil.rmtree(initialization_repo)
+    source_branch = INITIALIZATION_SPEC["source_branch"]
+    subprocess.run([
+        "git", "clone", "--depth", "1", "--branch", source_branch, REPO_URL, str(initialization_repo)
+    ], check=True)
+    source_dir = initialization_repo / CHECKPOINT_ROOT_NAME / INITIALIZATION_SPEC["source_experiment"]
+    source_state_path = source_dir / "resume_state.json"
+    source_last_path = source_dir / "last.pt"
+    source_contract_path = source_dir / "data_contract.json"
+    assert source_state_path.is_file() and source_last_path.is_file() and source_contract_path.is_file(), (
+        f"لا توجد حالة مكتملة للمرحلة المصدر {INITIALIZATION_SPEC['source_stage']} في فرع {source_branch}."
+    )
+    source_state = json.loads(source_state_path.read_text(encoding="utf-8"))
+    assert source_state.get("stage") == INITIALIZATION_SPEC["source_stage"]
+    assert source_state.get("experiment_name") == INITIALIZATION_SPEC["source_experiment"]
+    assert int(source_state.get("saved_after_epoch", 0)) >= INITIALIZATION_SPEC["required_epochs"], (
+        "وزن المرحلة السابقة غير مكتمل؛ لا يبدأ التكييف قبل الوصول إلى epochs المعتمدة."
+    )
+    actual_sha = sha256_file(source_last_path)
+    assert source_state.get("last_pt_sha256") == actual_sha, "تلف وزن التهيئة أو تبدل عن حالة GitHub."
+    expected_sha = INITIALIZATION_SPEC.get("expected_last_pt_sha256")
+    if expected_sha:
+        assert actual_sha == expected_sha, "وزن S0 المؤرشف لا يطابق البصمة المعتمدة عند epoch 100."
+    source_contract = json.loads(source_contract_path.read_text(encoding="utf-8"))
+    assert source_contract.get("class_map_sha256") == DATA_CONTRACT["class_map_sha256"], "تختلف خريطة الفئات بين وزن التهيئة والمرحلة الجديدة."
+    atomic_copy(source_last_path, INITIALIZATION_SOURCE_PT)
+    INITIALIZATION_WEIGHT_SHA256 = actual_sha
+    print(json.dumps({
+        "initialization": INITIALIZATION,
+        "source_stage": INITIALIZATION_SPEC["source_stage"],
+        "source_branch": source_branch,
+        "source_epoch": source_state["saved_after_epoch"],
+        "source_last_pt_sha256": actual_sha,
+    }, ensure_ascii=False, indent=2))
+    return INITIALIZATION_SOURCE_PT
 
 def remote_checkpoint_branch_exists():
     probe = subprocess.run(["git", "ls-remote", "--heads", REPO_URL, CHECKPOINT_BRANCH], text=True, capture_output=True)
@@ -604,6 +676,7 @@ def sync_latest_checkpoint(trainer):
     atomic_copy(CONTRACT_PATH, LOCAL_CONTRACT_JSON)
     state = current_resume_contract() | {
         "last_pt_sha256": sha256_file(LOCAL_LAST_PT),
+        "initialization_weight_sha256": INITIALIZATION_WEIGHT_SHA256,
         "saved_after_epoch": int(trainer.epoch) + 1,
         "saved_at_utc": datetime.now(timezone.utc).isoformat(),
     }
@@ -909,6 +982,7 @@ from ultralytics import YOLO
 RESTORE_LATEST_GITHUB_CHECKPOINT = True
 bootstrap_dataset_snapshot()
 restored_checkpoint = RESTORE_LATEST_GITHUB_CHECKPOINT and restore_latest_checkpoint_from_github()
+initialization_weight = None if restored_checkpoint else prepare_initialization_weight()
 TRAINING_ALREADY_COMPLETE = False
 
 if restored_checkpoint:
@@ -937,7 +1011,7 @@ else:
     for EFFECTIVE_BATCH_SIZE in BATCH_CANDIDATES:
         try:
             print(f"بدء التدريب مع batch={EFFECTIVE_BATCH_SIZE}؛ candidates={BATCH_CANDIDATES}")
-            model = YOLO(str(LOCAL_LAST_PT)) if restored_checkpoint else YOLO(MODEL_YAML)
+            model = YOLO(str(LOCAL_LAST_PT)) if restored_checkpoint else YOLO(str(initialization_weight) if initialization_weight else MODEL_YAML)
             add_training_callbacks(model)
             if restored_checkpoint:
                 results = model.train(
@@ -948,7 +1022,7 @@ else:
                 results = model.train(
                     data=str(DATA_YAML), epochs=EPOCHS, imgsz=IMAGE_SIZE, batch=EFFECTIVE_BATCH_SIZE, device=DEVICE,
                     workers=WORKERS, amp=AMP, cache=DATASET_CACHE, project=str(RUNS_ROOT), name=EXPERIMENT_NAME,
-                    exist_ok=True, pretrained=False, seed=SEED, deterministic=True, plots=True, save=True, save_period=1,
+                    exist_ok=True, pretrained=bool(initialization_weight), seed=SEED, deterministic=True, plots=True, save=True, save_period=1,
                 )
             break
         except RuntimeError as error:
