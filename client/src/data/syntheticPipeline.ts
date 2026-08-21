@@ -2,7 +2,7 @@ export type SyntheticStage = {
   id: string;
   title: string;
   goal: string;
-  layout: "isolated-glyph" | "ordered-lines" | "structured-pages" | "gated";
+  layout: "isolated-glyph" | "scattered-glyph" | "ordered-lines" | "structured-pages" | "gated";
   profile: string;
   controls: string[];
   gate: string;
@@ -28,16 +28,16 @@ export const syntheticStages: SyntheticStage[] = [
   },
   {
     id: "s0-controlled-deformation",
-    title: "S0 · حرف مفرد مشوّه بضبط",
-    goal: "تعليم الكاشف متانة أولية للحرف الواحد من دون إخفاء مصدر أي تغيير بصري.",
-    layout: "isolated-glyph",
+    title: "S0-d · محرف أصغر متناثر بضبط",
+    goal: "تعليم الكاشف محرفًا واحدًا أصغر في مواضع صفحة متغيرة، مع تشويه مضبوط ومن دون كلمات أو صور مخطوطات.",
+    layout: "scattered-glyph",
     profile: "controlled-deformation",
-    controls: ["حرف واحد لكل صورة", "تدوير حرفي محدود", "اهتزاز حبر", "ضجيج ببذرة قابلة للإعادة"],
+    controls: ["حرف واحد أصغر لكل صورة", "موضع صفحة عشوائي آمن", "تدوير حرفي محدود", "ضجيج ببذرة قابلة للإعادة"],
     gate: "تسجل كل تجربة profile والبذرة والمعلمات في manifest مستقل.",
     status: "ready",
-    previewUrl: "/manus-storage/old-permic-s0-controlled-preview_eb425574.png",
+    previewUrl: "/manus-storage/old_permic_scattered-glyph_controlled-deformation_00000_db39f2fe.png",
     previewRun: { samples: 6, seed: 20350 },
-    galleryUrls: ["/manus-storage/s0-controlled-00_583bc856.png", "/manus-storage/s0-controlled-01_93105928.png", "/manus-storage/s0-controlled-02_7ce8390a.png", "/manus-storage/s0-controlled-03_fc54e57a.png", "/manus-storage/s0-controlled-04_46fcacde.png", "/manus-storage/s0-controlled-05_547c80fb.png"],
+    galleryUrls: ["/manus-storage/old_permic_scattered-glyph_controlled-deformation_00000_db39f2fe.png", "/manus-storage/old_permic_scattered-glyph_controlled-deformation_00001_d9e47b5d.png", "/manus-storage/old_permic_scattered-glyph_controlled-deformation_00002_e1279596.png", "/manus-storage/old_permic_scattered-glyph_controlled-deformation_00003_fe979d06.png", "/manus-storage/old_permic_scattered-glyph_controlled-deformation_00004_de32b40e.png", "/manus-storage/old_permic_scattered-glyph_controlled-deformation_00005_008d95a3.png"],
   },
   {
     id: "s1-ordered-lines",

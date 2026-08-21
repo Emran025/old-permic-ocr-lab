@@ -72,6 +72,27 @@ describe("synthetic Old Permic glyph assets", () => {
     expect(deformedManifest.profile.background_fragment_count).toBeGreaterThan(0);
   });
 
+  it("creates S0-d scattered single-glyph assets with smaller boxes and non-fixed page positions", () => {
+    const root = mkdtempSync(join(tmpdir(), "old-permic-s0d-scattered-"));
+    roots.push(root);
+    const generator = join(process.cwd(), "training", "synthetic", "generate_old_permic_synthetic.py");
+    const font = "/usr/share/fonts/truetype/noto/NotoSansOldPermic-Regular.ttf";
+    execFileSync("python3", [generator, "--output", root, "--samples", "24", "--seed", "20350", "--layout", "scattered-glyph", "--profile", "controlled-deformation", "--balanced-classes", "--font", font], { encoding: "utf8" });
+
+    const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+    const records = readFileSync(join(root, "assets.jsonl"), "utf8").trim().split("\n").map((row) => JSON.parse(row));
+    const boxes = ["train", "val", "test"].flatMap((split) =>
+      readdirSync(join(root, "labels", split)).map((name) => readFileSync(join(root, "labels", split, name), "utf8").trim().split(" ").map(Number)),
+    );
+
+    expect(manifest.layout).toBe("scattered-glyph");
+    expect(records.every((record) => record.unit === "S0-d-scattered-glyph-asset" && record.sequence.length === 1)).toBe(true);
+    expect(records.every((record) => record.page_geometry.curriculum.spatial_policy === "uniform-safe-noncentral-grid-placement")).toBe(true);
+    expect(boxes.every(([, , , width, height]) => Math.max(width, height) < 0.55)).toBe(true);
+    expect(Math.max(...boxes.map(([, x]) => x)) - Math.min(...boxes.map(([, x]) => x))).toBeGreaterThan(0.25);
+    expect(Math.max(...boxes.map(([, , y]) => y)) - Math.min(...boxes.map(([, , y]) => y))).toBeGreaterThan(0.25);
+  });
+
   it("reproduces the optimized controlled-deformation images byte-for-byte from the same seed", () => {
     const firstRoot = mkdtempSync(join(tmpdir(), "old-permic-fast-noise-first-"));
     const secondRoot = mkdtempSync(join(tmpdir(), "old-permic-fast-noise-second-"));

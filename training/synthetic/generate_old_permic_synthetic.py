@@ -20,7 +20,7 @@ from pathlib import Path
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 DEFAULT_FONT_PATH = Path("/usr/share/fonts/truetype/noto/NotoSansOldPermic-Regular.ttf")
-LAYOUTS = ("isolated-glyph", "ordered-lines", "structured-pages")
+LAYOUTS = ("isolated-glyph", "scattered-glyph", "ordered-lines", "structured-pages")
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,7 @@ class Profile:
 
 PROFILES: dict[str, Profile] = {
     "unicode-clean": Profile("unicode-clean", 0.0, 0.0, 0, 0, 12, (250, 247, 238), (36, 48, 41), 0.80, 0, 0, 0),
-    "controlled-deformation": Profile("controlled-deformation", 3.0, 0.45, 10, 3, 16, (242, 235, 219), (62, 47, 38), 0.66, 12, 18, 10),
+    "controlled-deformation": Profile("controlled-deformation", 3.0, 0.45, 10, 3, 16, (242, 235, 219), (62, 47, 38), 0.42, 0, 18, 10),
     "manuscript-inspired": Profile("manuscript-inspired", 5.0, 0.7, 18, 5, 20, (232, 221, 197), (73, 51, 35), 0.56, 20, 32, 18),
 }
 
@@ -153,6 +153,54 @@ def render_isolated_glyph_sample(
         "page_id": None,
         "reading_order": ["glyph-0"],
         "regions": [],
+        "lines": [],
+    }
+    return finalize_image(image, profile, rng), [(class_id, center_x, center_y, width, height)], [glyph], metadata
+
+
+def render_scattered_glyph_sample(
+    characters: list[dict[str, str]], profile: Profile, seed: int, image_size: int, font_size: int, font_path: Path, class_id_override: int | None = None
+) -> tuple[Image.Image, list[tuple[int, float, float, float, float]], list[str], dict[str, object]]:
+    """Render one smaller labelled glyph at a deterministic, non-central page position (S0-d)."""
+    rng = random.Random(seed)
+    image = Image.new("RGB", (image_size, image_size), profile.background)
+    add_background_fragments(image, profile, rng)
+    class_id = rng.randrange(len(characters)) if class_id_override is None else class_id_override
+    glyph = characters[class_id]["glyph"]
+    font = ImageFont.truetype(str(font_path), isolated_font_size(glyph, image_size, font_size, font_path, profile))
+    patch = glyph_patch(glyph, font, profile, rng)
+    max_patch_extent = max(32, round(image_size * (profile.isolated_glyph_extent + 0.08)))
+    if max(patch.width, patch.height) > max_patch_extent:
+        ratio = max_patch_extent / max(patch.width, patch.height)
+        patch = patch.resize((max(1, round(patch.width * ratio)), max(1, round(patch.height * ratio))), Image.Resampling.LANCZOS)
+    safe_margin = max(16, image_size // 16)
+    x_low, x_high = safe_margin, max(safe_margin, image_size - safe_margin - patch.width)
+    y_low, y_high = safe_margin, max(safe_margin, image_size - safe_margin - patch.height)
+    # Select one of eight page zones (all except the central one).  This keeps
+    # every sample at a varying but visibly non-central location in S0-d.
+    zone_col, zone_row = rng.choice(((0, 0), (1, 0), (2, 0), (0, 1), (2, 1), (0, 2), (1, 2), (2, 2)))
+    x_span = max(0, x_high - x_low)
+    y_span = max(0, y_high - y_low)
+    x_start = x_low + round(x_span * zone_col / 3)
+    x_end = x_low + round(x_span * (zone_col + 1) / 3)
+    y_start = y_low + round(y_span * zone_row / 3)
+    y_end = y_low + round(y_span * (zone_row + 1) / 3)
+    x = rng.randint(min(x_start, x_end), max(x_start, x_end))
+    y = rng.randint(min(y_start, y_end), max(y_start, y_end))
+    image.paste(patch, (x, y), patch)
+    center_x, center_y, width, height = normalized_box(x, y, patch.width, patch.height, image_size)
+    metadata = {
+        "layout_family": "scattered-glyph",
+        "curriculum": {
+            "isolated_glyph_extent": profile.isolated_glyph_extent,
+            "spatial_policy": "uniform-safe-noncentral-grid-placement",
+            "spatial_zone": {"column": zone_col, "row": zone_row},
+            "safe_margin_px": safe_margin,
+            "background_fragment_count": profile.background_fragment_count,
+        },
+        "page_id": f"s0d-page-{seed}",
+        "reading_order": ["glyph-0"],
+        "regions": [{"region_id": "safe-page-field", "role": "synthetic-character-field", "bbox": [0.0, 0.0, 1.0, 1.0]}],
         "lines": [],
     }
     return finalize_image(image, profile, rng), [(class_id, center_x, center_y, width, height)], [glyph], metadata
@@ -277,6 +325,8 @@ def render_sample(
 ) -> tuple[Image.Image, list[tuple[int, float, float, float, float]], list[str], dict[str, object]]:
     if layout == "isolated-glyph":
         return render_isolated_glyph_sample(characters, profile, seed, image_size, font_size, font_path, class_id_override)
+    if layout == "scattered-glyph":
+        return render_scattered_glyph_sample(characters, profile, seed, image_size, font_size, font_path, class_id_override)
     if layout == "ordered-lines":
         return render_ordered_line_sample(characters, profile, seed, image_size, font_size, font_path)
     if layout == "structured-pages":
@@ -295,7 +345,12 @@ def render_and_write_sample(
     with (output_dir / "labels" / split / f"{stem}.txt").open("w", encoding="utf-8") as label_file:
         for class_id, center_x, center_y, width, height in labels:
             label_file.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
-    unit = {"isolated-glyph": "S0-glyph-asset", "ordered-lines": "S1-ordered-line", "structured-pages": "S2-structured-page"}[layout]
+    unit = {
+        "isolated-glyph": "S0-glyph-asset",
+        "scattered-glyph": "S0-d-scattered-glyph-asset",
+        "ordered-lines": "S1-ordered-line",
+        "structured-pages": "S2-structured-page",
+    }[layout]
     return {
         "asset_id": stem,
         "parent_id": None,
@@ -327,8 +382,8 @@ def write_dataset(
     if not font_path.exists():
         raise FileNotFoundError(f"Required font is missing: {font_path}")
     characters = old_permic_characters()
-    if balanced_classes and layout != "isolated-glyph":
-        raise ValueError("--balanced-classes is available only for isolated-glyph S0 assets.")
+    if balanced_classes and layout not in ("isolated-glyph", "scattered-glyph"):
+        raise ValueError("--balanced-classes is available only for single-glyph S0 or S0-d assets.")
     if workers < 1:
         raise ValueError("--workers must be at least 1")
     if output_dir.exists():
@@ -398,9 +453,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate reproducible Old Permic synthetic character-detection samples.")
     parser.add_argument("--output", type=Path, required=True, help="Output directory outside the web application project.")
     parser.add_argument("--profile", choices=sorted(PROFILES), default="unicode-clean")
-    parser.add_argument("--layout", choices=LAYOUTS, default="isolated-glyph", help="S0 character assets, S1 ordered lines, or S2 structured pages.")
+    parser.add_argument("--layout", choices=LAYOUTS, default="isolated-glyph", help="S0 centered glyphs, S0-d scattered glyphs, S1 ordered lines, or S2 structured pages.")
     parser.add_argument("--samples", type=int, default=100)
-    parser.add_argument("--balanced-classes", action="store_true", help="Cycle the 38 classes independently inside each S0 split.")
+    parser.add_argument("--balanced-classes", action="store_true", help="Cycle the 38 classes independently inside each single-glyph S0 or S0-d split.")
     parser.add_argument("--seed", type=int, default=10350)
     parser.add_argument("--image-size", type=int, default=640)
     parser.add_argument("--font-size", type=int, default=58)
