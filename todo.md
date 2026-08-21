@@ -89,8 +89,8 @@
 - [x] إزالة أي علامة تعارض دمج متبقية من server/routers.ts وإعادة التحقق من خادم التطوير قبل checkpoint لاحق.
 - [ ] تثبيت إصدار Pillow متوافق في خلية Colab وإعادة تشغيل خلايا البيئة ثم التحقق من نجاح استيراد مولد البيانات قبل توليد S0.
 - [x] حفظ checkpoint ونشر الموقع، ثم إنشاء مهمة Heartbeat للمشروع كل خمس دقائق وربط taskUid بصف مزامنة إصدار التدريب.
-- [ ] فتح دفتر Colab العام على GPU وتشغيل خلايا البيئة والاستنساخ وإعداد checkpoint على GitHub وتثبيت بصمة الخط.
-- [ ] توليد baseline S0 الصناعي والتحقق من manifest ووسوم YOLO والمعاينة البصرية داخل Colab.
+- [x] فتح دفتر Colab العام على GPU وتشغيل خلايا البيئة والاستنساخ وإعداد checkpoint على GitHub وتثبيت بصمة الخط.
+- [x] توليد baseline S0 الصناعي والتحقق من manifest ووسوم YOLO والمعاينة البصرية داخل Colab.
 - [ ] تشغيل تدريب S0 baseline على GPU مع دفع آخر checkpoint والمقاييس الفعلية إلى فرع GitHub المخصص بعد كل epoch.
 - [ ] تقييم test وبناء release.json موثق من مخرجات Colab الفعلية فقط، ثم نشره بعد المراجعة إلى فرع colab-results.
 - [x] إضافة خلية نسخ احتياطي ذرّية من `/content/old-permic-ocr-workspace` إلى Google Drive، تحفظ manifest ببصمات الملفات ووقت التنفيذ وتبقي آخر نسخة سليمة.
@@ -100,7 +100,7 @@
 - [x] إضافة مسار تنزيل مباشر من مجلد Drive العام إلى Colab عندما لا يظهر الاختصار في Drive المركب للحساب الثاني، مع تحقق من ملفات الاستئناف قبل النسخ.
 - [x] إضافة خلية Colab تأخذ رابط مجلد Drive عام لـ`workspace_cache`، وتنزله إلى القرص المؤقت ثم تستعيد cache وtraining_state وتتحقق من `resume_state.json` قبل الاستئناف.
 - [x] تبسيط دفتر Colab بإزالة مزامنة واسترجاع Google Drive واعتماد GitHub فقط لحفظ checkpoint وملفات الاستئناف بعد كل epoch.
-- [ ] تشغيل baseline S0 الفعلي من دفتر GitHub-only والتحقق من ظهور أول checkpoint موثق في فرع colab-checkpoints.
+- [x] تشغيل baseline S0 الفعلي من دفتر GitHub-only والتحقق من checkpoint موثق في فرع colab-checkpoints حتى epoch 33، مع snapshot وlast.pt وبصمات متطابقة.
 - [x] ضبط baseline S0 لاستهلاك ذاكرة T4 بصورة أعلى عبر batch متدرج وإعدادات DataLoader ملائمة، مع مسار رجوع آمن عند نفاد الذاكرة.
 - [x] تعديل مسار Colab ليحفظ snapshot قابلًا للاستئناف في GitHub يتضمن بيانات S0 الصناعية وlast.pt وmetadata، ثم يستعيده ويتحقق منه قبل استئناف كل جلسة.
 - [x] إصلاح ترحيل checkpoint S0 القديم عندما تختلف بصمة manifest عن snapshot الجديد مع الإبقاء على تحقق الفئات والوزن والعقد الأساسية.
