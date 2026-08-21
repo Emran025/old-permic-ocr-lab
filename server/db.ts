@@ -2,6 +2,10 @@ import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   analyses,
+  annotationImages,
+  annotationProjects,
+  AnnotationImage,
+  InsertAnnotationImage,
   InsertAnalysis,
   InsertTrainingRelease,
   InsertTrainingSyncState,
@@ -197,6 +201,65 @@ export async function upsertTrainingSyncState(state: InsertTrainingSyncState) {
     },
   });
   return getTrainingSyncState(state.stateKey);
+}
+
+export async function getOrCreateAnnotationProject(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  const existing = await db.select().from(annotationProjects).where(eq(annotationProjects.userId, userId)).limit(1);
+  if (existing[0]) return existing[0];
+  const result = await db.insert(annotationProjects).values({
+    userId,
+    title: "مجموعة وسوم البرمية القديمة",
+    description: "صور حقيقية للمراجعة اليدوية قبل أي تصدير أو تدريب.",
+  });
+  const projectId = Number(result[0]?.insertId);
+  const created = await db.select().from(annotationProjects).where(eq(annotationProjects.id, projectId)).limit(1);
+  return created[0];
+}
+
+export async function listAnnotationImagesForUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  return db.select().from(annotationImages).where(eq(annotationImages.userId, userId)).orderBy(desc(annotationImages.updatedAt));
+}
+
+export async function getAnnotationImageForUser(imageId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  const rows = await db.select().from(annotationImages).where(and(eq(annotationImages.id, imageId), eq(annotationImages.userId, userId))).limit(1);
+  return rows[0];
+}
+
+export async function getAnnotationImageBySourceLibraryId(userId: number, sourceLibraryId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  const rows = await db
+    .select()
+    .from(annotationImages)
+    .where(and(eq(annotationImages.userId, userId), eq(annotationImages.sourceLibraryId, sourceLibraryId)))
+    .limit(1);
+  return rows[0];
+}
+
+export async function createAnnotationImage(image: InsertAnnotationImage) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  const result = await db.insert(annotationImages).values(image);
+  const imageId = Number(result[0]?.insertId);
+  const created = await db.select().from(annotationImages).where(eq(annotationImages.id, imageId)).limit(1);
+  return created[0];
+}
+
+export async function updateAnnotationImageForUser(
+  imageId: number,
+  userId: number,
+  changes: Partial<Pick<AnnotationImage, "boxes" | "annotationStatus" | "split" | "notes" | "sourceTitle" | "repositoryId" | "folioOrPage" | "sourceUrl" | "rightsBasis" | "oldPermicVisible" | "imageWidth" | "imageHeight" | "reviewedAt">>,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  await db.update(annotationImages).set({ ...changes, updatedAt: new Date() }).where(and(eq(annotationImages.id, imageId), eq(annotationImages.userId, userId)));
+  return getAnnotationImageForUser(imageId, userId);
 }
 
 // TODO: add feature queries here as your schema grows.

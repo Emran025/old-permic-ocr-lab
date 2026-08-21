@@ -1085,6 +1085,214 @@ else:
     print("النشر مغلق. راجع metrics.json وrelease.json ثم غيّر PUBLISH_RELEASE إلى True فقط عند القبول.")
 `, "publish-release"),
 
+  markdown("real-manuscript-finetune", `
+## تكييف البيانات الحقيقية المراجعة
+
+تُنشأ حزمة البيانات من تبويب **الوسم** في الموقع، ثم تُنزّل بصيغة ZIP وتُرفع يدويًا إلى جلسة Colab. لا ينقل هذا الدفتر صور المخطوطات إلى GitHub؛ يحتفظ GitHub فقط بوزن الاستئناف والعقد والمقاييس إذا شُغّل التكييف.
+
+> لا تُفعّل خلايا هذا القسم لمجرد وجود صور. لا بد من أن تجتاز الحزمة المدقق، وتحتوي تقسيمات train/val/test مستقلة، وتملك خريطة فئات مطابقة، وأن يراجع الباحث حقوق كل صورة وقراءة كل صندوق. التكييف ينطلق من **وزن صناعي محفوظ ومحدد** ولا يثبت تلقائيًا OCR للمخطوطات التاريخية.
+`, "real-manuscript-finetune"),
+
+  code("real-data-preflight", `
+# 15) استيراد ZIP صادر من الموقع والتحقق منه قبل أي تكييف. اترك التشغيل مغلقًا حتى ترفع الحزمة إلى Colab.
+import zipfile
+
+PREPARE_REAL_MANUSCRIPT_DATA = False
+REAL_DATA_ARCHIVE = Path("/content/old_permic_real_labeled_v1.zip")
+REAL_EXTRACT_ROOT = WORKSPACE / "real_labeled_import"
+REAL_VALIDATOR_PATH = PROJECT_ROOT / "scripts" / "validate_real_labeled_dataset.py"
+MIN_REAL_IMAGES_PER_SPLIT = 1
+MIN_REAL_BOXES = 10
+MIN_REAL_SOURCE_PAGES = 3
+
+if PREPARE_REAL_MANUSCRIPT_DATA:
+    assert REAL_DATA_ARCHIVE.is_file(), (
+        "ارفع ZIP الذي صدرته من تبويب الوسم إلى /content ثم اضبط REAL_DATA_ARCHIVE. "
+        "لا تستخدم صورًا أو labels غير مراجعة."
+    )
+    if REAL_EXTRACT_ROOT.exists():
+        shutil.rmtree(REAL_EXTRACT_ROOT)
+    REAL_EXTRACT_ROOT.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(REAL_DATA_ARCHIVE) as archive:
+        archive.extractall(REAL_EXTRACT_ROOT)
+    candidate_roots = [path.parent for path in REAL_EXTRACT_ROOT.rglob("class_map.json")]
+    assert len(candidate_roots) == 1, "يجب أن يحتوي ZIP على جذر حزمة بيانات واحدة فقط."
+    REAL_DATA_ROOT = candidate_roots[0]
+    subprocess.run([sys.executable, str(REAL_VALIDATOR_PATH), str(REAL_DATA_ROOT)], check=True)
+
+    REAL_CLASS_MAP_PATH = REAL_DATA_ROOT / "class_map.json"
+    REAL_MANIFEST_PATH = REAL_DATA_ROOT / "manifest_real.json"
+    real_class_map = json.loads(REAL_CLASS_MAP_PATH.read_text(encoding="utf-8"))
+    REAL_CLASS_NAMES = [item["label"] for item in real_class_map["classes"]]
+    assert REAL_CLASS_NAMES == CLASS_NAMES, (
+        "خريطة فئات الحزمة الحقيقية لا تطابق ترتيب Unicode الصناعي. "
+        "لا يجوز بدء تكييف بترتيب فئات مختلف."
+    )
+    REAL_SPLIT_SUMMARY, real_box_count, source_pages = {}, 0, set()
+    for split in ("train", "val", "test"):
+        image_paths = sorted((REAL_DATA_ROOT / "images" / split).glob("*"))
+        image_paths = [path for path in image_paths if path.suffix.lower() in (".png", ".jpg", ".jpeg", ".tif", ".tiff")]
+        assert len(image_paths) >= MIN_REAL_IMAGES_PER_SPLIT, f"لا توجد صور كافية في {split}."
+        for image_path in image_paths:
+            label_path = REAL_DATA_ROOT / "labels" / split / f"{image_path.stem}.txt"
+            real_box_count += len([row for row in label_path.read_text(encoding="utf-8").splitlines() if row.strip()])
+    import csv
+    with (REAL_DATA_ROOT / "sources.csv").open("r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            source_pages.add((row["repository_id"], row["folio_or_page"]))
+    assert real_box_count >= MIN_REAL_BOXES, f"عدد صناديق المحارف الحقيقية أقل من الحد الموثق ({MIN_REAL_BOXES})."
+    assert len(source_pages) >= MIN_REAL_SOURCE_PAGES, f"يجب أن تمثل الحزمة {MIN_REAL_SOURCE_PAGES} صفحات/مصادر مستقلة على الأقل."
+
+    REAL_DATA_YAML = REAL_DATA_ROOT / "data.yaml"
+    REAL_DATA_YAML.write_text(yaml.safe_dump({
+        "path": str(REAL_DATA_ROOT), "train": "images/train", "val": "images/val", "test": "images/test",
+        "nc": len(REAL_CLASS_NAMES), "names": REAL_CLASS_NAMES,
+    }, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    REAL_DATA_CONTRACT = {
+        "contract_version": 1,
+        "kind": "old-permic-reviewed-real-character-detection",
+        "source_commit": SOURCE_COMMIT,
+        "class_map_sha256": sha256_file(REAL_CLASS_MAP_PATH),
+        "manifest_real_sha256": sha256_file(REAL_MANIFEST_PATH),
+        "class_count": len(REAL_CLASS_NAMES),
+        "source_page_count": len(source_pages),
+        "box_count": real_box_count,
+        "real_manuscripts_included": True,
+    }
+    REAL_CONTRACT_PATH = REAL_DATA_ROOT / "data_contract_real.json"
+    atomic_json(REAL_CONTRACT_PATH, REAL_DATA_CONTRACT)
+    print(json.dumps({"dataset_root": str(REAL_DATA_ROOT), **REAL_DATA_CONTRACT}, ensure_ascii=False, indent=2))
+else:
+    print("استيراد البيانات الحقيقية مغلق. نزّل ZIP من الموقع ثم غيّر PREPARE_REAL_MANUSCRIPT_DATA إلى True.")
+`, "real-data-preflight"),
+
+  code("real-manuscript-finetune-run", `
+# 16) تكييف اختياري من آخر وزن صناعي محفوظ. لا ينشر هذا القسم أي ادعاء أو وزن للموقع.
+RUN_REAL_MANUSCRIPT_FINETUNE = False
+SYNTHETIC_BASE_EXPERIMENT = "old_permic_s0_baseline_v2_batch8"
+REAL_FINETUNE_EPOCHS = 40
+REAL_FINETUNE_BATCH_CANDIDATES = (8, 6, 4, 2)
+REAL_FINETUNE_IMAGE_SIZE = 960
+REAL_FINETUNE_NAME = f"old_permic_real_finetune_from_{SYNTHETIC_BASE_EXPERIMENT}"
+REAL_STATE_DIR = WORKSPACE / "training_state" / REAL_FINETUNE_NAME
+REAL_RUNS_ROOT = WORKSPACE / "runs_real"
+REAL_CHECKPOINT_DIR = CHECKPOINT_ROOT / REAL_FINETUNE_NAME
+REAL_LOCAL_LAST_PT = REAL_STATE_DIR / "last.pt"
+REAL_LOCAL_CONTRACT = REAL_STATE_DIR / "data_contract_real.json"
+REAL_LOCAL_STATE = REAL_STATE_DIR / "resume_state.json"
+REAL_STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+def restore_real_checkpoint():
+    remote_state = REAL_CHECKPOINT_DIR / "resume_state.json"
+    remote_last = REAL_CHECKPOINT_DIR / "last.pt"
+    remote_contract = REAL_CHECKPOINT_DIR / "data_contract_real.json"
+    if not (remote_state.is_file() and remote_last.is_file() and remote_contract.is_file()):
+        return False
+    saved = json.loads(remote_state.read_text(encoding="utf-8"))
+    remote_data_contract = json.loads(remote_contract.read_text(encoding="utf-8"))
+    for key in ("class_map_sha256", "manifest_real_sha256"):
+        assert remote_data_contract.get(key) == REAL_DATA_CONTRACT[key], f"لا يستأنف التكييف: اختلاف {key}."
+    assert saved.get("last_pt_sha256") == sha256_file(remote_last), "بصمة last.pt الحقيقي غير مطابقة."
+    atomic_copy(remote_last, REAL_LOCAL_LAST_PT)
+    atomic_copy(remote_contract, REAL_LOCAL_CONTRACT)
+    atomic_json(REAL_LOCAL_STATE, saved)
+    print(f"استُعيد checkpoint تكييف البيانات الحقيقية بعد epoch {saved['saved_after_epoch']}.")
+    return True
+
+def sync_real_checkpoint(trainer):
+    local_last = Path(trainer.last)
+    assert local_last.is_file(), "لم ينشئ YOLO last.pt لتكييف البيانات الحقيقية."
+    atomic_copy(local_last, REAL_LOCAL_LAST_PT)
+    atomic_copy(REAL_CONTRACT_PATH, REAL_LOCAL_CONTRACT)
+    state = {
+        "schema_version": 1,
+        "experiment_name": REAL_FINETUNE_NAME,
+        "base_synthetic_experiment": SYNTHETIC_BASE_EXPERIMENT,
+        "class_map_sha256": REAL_DATA_CONTRACT["class_map_sha256"],
+        "manifest_real_sha256": REAL_DATA_CONTRACT["manifest_real_sha256"],
+        "last_pt_sha256": sha256_file(REAL_LOCAL_LAST_PT),
+        "saved_after_epoch": int(trainer.epoch) + 1,
+        "saved_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    atomic_json(REAL_LOCAL_STATE, state)
+    atomic_copy(REAL_LOCAL_LAST_PT, REAL_CHECKPOINT_DIR / "last.pt")
+    atomic_copy(REAL_LOCAL_CONTRACT, REAL_CHECKPOINT_DIR / "data_contract_real.json")
+    atomic_json(REAL_CHECKPOINT_DIR / "resume_state.json", state)
+    atomic_json(CHECKPOINT_ROOT / "real_latest.json", {
+        "schema_version": 1, "experiment_name": REAL_FINETUNE_NAME,
+        "checkpoint_path": str(REAL_CHECKPOINT_DIR.relative_to(CHECKPOINT_REPO)),
+        "saved_after_epoch": state["saved_after_epoch"], "last_pt_sha256": state["last_pt_sha256"],
+    })
+    commit_and_push_checkpoint_tree(f"real checkpoint: {REAL_FINETUNE_NAME} epoch {state['saved_after_epoch']}")
+
+if RUN_REAL_MANUSCRIPT_FINETUNE:
+    assert PREPARE_REAL_MANUSCRIPT_DATA, "شغّل خلية استيراد وتحقق البيانات الحقيقية أولًا."
+    assert REAL_DATA_YAML.is_file() and REAL_CONTRACT_PATH.is_file()
+    ensure_checkpoint_repo()
+    restored_real = restore_real_checkpoint()
+    if not restored_real:
+        SYNTHETIC_BASE_LAST_PT = CHECKPOINT_ROOT / SYNTHETIC_BASE_EXPERIMENT / "last.pt"
+        assert SYNTHETIC_BASE_LAST_PT.is_file(), (
+            "لا يوجد الوزن الصناعي المحدد في GitHub checkpoint. غيّر SYNTHETIC_BASE_EXPERIMENT إلى تجربة مكتملة "
+            "ولا تستبدله بوزن غير موثق."
+        )
+        model = YOLO(str(SYNTHETIC_BASE_LAST_PT))
+    else:
+        model = YOLO(str(REAL_LOCAL_LAST_PT))
+    model.add_callback("on_model_save", sync_real_checkpoint)
+    last_oom = None
+    for batch_size in REAL_FINETUNE_BATCH_CANDIDATES:
+        try:
+            if restored_real:
+                results = model.train(resume=True, batch=batch_size, workers=WORKERS, amp=AMP, cache=False)
+            else:
+                results = model.train(
+                    data=str(REAL_DATA_YAML), epochs=REAL_FINETUNE_EPOCHS, imgsz=REAL_FINETUNE_IMAGE_SIZE,
+                    batch=batch_size, device=DEVICE, workers=WORKERS, amp=AMP, cache=False,
+                    project=str(REAL_RUNS_ROOT), name=REAL_FINETUNE_NAME, exist_ok=True,
+                    pretrained=True, seed=SEED, deterministic=True, plots=True, save=True, save_period=1,
+                )
+            break
+        except RuntimeError as error:
+            if not is_cuda_oom(error) or batch_size == REAL_FINETUNE_BATCH_CANDIDATES[-1]:
+                raise
+            last_oom = error
+            torch.cuda.empty_cache()
+            print(f"نفدت الذاكرة مع batch={batch_size}؛ تجربة حجم أصغر.")
+    else:
+        raise RuntimeError("فشلت جميع أحجام batch لتكييف البيانات الحقيقية.") from last_oom
+    REAL_RUN_DIR = Path(model.trainer.save_dir)
+    REAL_BEST_PT = REAL_RUN_DIR / "weights" / "best.pt"
+    assert REAL_BEST_PT.is_file(), "لم يعثر على best.pt لتكييف البيانات الحقيقية."
+    print("اكتمل تكييف مرشح للتقييم؛ لا تنشر أو تربط الموقع قبل تقييم test مستقل:", REAL_BEST_PT)
+else:
+    print("تكييف البيانات الحقيقية مغلق. راجع الحزمة والحقوق، ثم غيّر RUN_REAL_MANUSCRIPT_FINETUNE إلى True.")
+`, "real-manuscript-finetune-run"),
+
+  code("real-manuscript-test-evaluation", `
+# 17) تقييم test مستقل لتجربة حقيقية؛ منفصل عن إصدار الموقع ومغلق افتراضيًا.
+RUN_REAL_MANUSCRIPT_EVALUATION = False
+if RUN_REAL_MANUSCRIPT_EVALUATION:
+    assert RUN_REAL_MANUSCRIPT_FINETUNE, "شغّل تكييف البيانات الحقيقية أولًا في الجلسة نفسها أو أضف مسار استعادة مكتملًا."
+    real_evaluation_model = YOLO(str(REAL_BEST_PT))
+    real_metrics = real_evaluation_model.val(
+        data=str(REAL_DATA_YAML), split="test", imgsz=REAL_FINETUNE_IMAGE_SIZE,
+        batch=min(REAL_FINETUNE_BATCH_CANDIDATES), device=DEVICE, plots=True,
+    )
+    REAL_METRICS = {
+        "schema_version": 1, "experiment_name": REAL_FINETUNE_NAME,
+        "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "dataset_contract": REAL_DATA_CONTRACT,
+        "weights": {"best_pt_sha256": sha256_file(REAL_BEST_PT)},
+        "test_metrics": {"map50_95": float(real_metrics.box.map), "map50": float(real_metrics.box.map50), "precision": float(real_metrics.box.mp), "recall": float(real_metrics.box.mr)},
+        "interpretation": "reviewed real-manuscript fine-tuning experiment; requires scholarly review before any OCR claim or web release.",
+    }
+    atomic_json(REAL_RUN_DIR / "real_metrics.json", REAL_METRICS)
+    print(json.dumps(REAL_METRICS, ensure_ascii=False, indent=2))
+else:
+    print("تقييم البيانات الحقيقية مغلق. لا توجد مقاييس أو إصدار حقيقي مُدّعى به.")
+`, "real-manuscript-test-evaluation"),
+
   code("inference-smoke", `
 # 14) اختبار inference محلي على صورة اختبار اصطناعية. لا يغير حالة الموقع ولا يدعي OCR للمخطوطات.
 sample_image = sorted((DATASET_ROOT / "images" / "test").glob("*.png"))[0]

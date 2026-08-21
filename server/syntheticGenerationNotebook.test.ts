@@ -32,6 +32,11 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("ستنشئ المرحلة الحالية بياناتها الحتمية المستقلة");
     expect(code).toContain("bootstrap_dataset_snapshot()");
     expect(code).toContain("copy_dataset_snapshot");
+    expect(code).toContain("PREPARE_REAL_MANUSCRIPT_DATA = False");
+    expect(code).toContain("validate_real_labeled_dataset.py");
+    expect(code).toContain("RUN_REAL_MANUSCRIPT_FINETUNE = False");
+    expect(code).toContain("SYNTHETIC_BASE_EXPERIMENT");
+    expect(code).toContain("real_latest.json");
   });
 
   it("keeps the Colab checkpoint, evaluation, and gated publication workflow explicit", () => {
@@ -73,5 +78,6 @@ describe("synthetic generation notebook", () => {
     expect(prose).toContain("لا تُرفع");
     expect(prose).toContain("لا يربط الدفتر Google Drive");
     expect(prose).toContain("لا تثبت أداء OCR على مخطوطات تاريخية");
+    expect(prose).toContain("لا ينقل هذا الدفتر صور المخطوطات إلى GitHub");
   });
 });
