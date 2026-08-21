@@ -27,6 +27,8 @@ for region in REGIONS:
         unit = annotation_units.get(region["annotation_unit_id"])
         assert unit is not None, f"Unknown annotation unit in {region['crop_id']}"
         assert unit["hosted_source_id"] == region["source_id"], f"Annotation unit/source mismatch in {region['crop_id']}"
+for unit in annotation_units.values():
+    assert unit.get("manuscript_split_group"), f"Missing manuscript split group in {unit['id']}"
 instances = [json.loads(line) for line in INSTANCES_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 for instance in instances:

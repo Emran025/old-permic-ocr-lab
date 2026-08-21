@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export only evidence-backed real Old Permic annotations into YOLO preview assets.
 
-Three manuscript sources make a source-disjoint split *possible*, but do not
+Three independent manuscript groups make a source-disjoint split *possible*, but do not
 by themselves make a 38-class detector trainable.  Each represented class
 must occur in all three independent sources; otherwise a held-out split would
 contain classes absent from its training partition or evaluation partition.
@@ -35,6 +35,10 @@ def main() -> None:
     crop_root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/home/ubuntu/real-character-assets/crops")
     output_root = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("/home/ubuntu/real-character-assets/yolo_preview")
     classes = json.loads((DATASET_ROOT / "class_map.json").read_text(encoding="utf-8"))["classes"]
+    annotation_units = {
+        unit["id"]: unit
+        for unit in json.loads((DATASET_ROOT / "source_manifest.json").read_text(encoding="utf-8")).get("annotation_units", [])
+    }
     class_ids = {entry["codepoint"]: entry["id"] for entry in classes}
     rows = [json.loads(line) for line in (DATASET_ROOT / "annotations" / "character_instances.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
     verified = [row for row in rows if row["review_status"] == "verified"]
@@ -69,10 +73,11 @@ def main() -> None:
         destination_label.write_text("\n".join(label_lines) + "\n", encoding="utf-8")
         assets.append({"crop_id": crop_id, "source_ids": sorted({entry["source_id"] for entry in entries}), "instances": len(entries), "image_sha256": sha256_file(destination_image), "label_sha256": sha256_file(destination_label)})
     source_ids = sorted({entry["source_id"] for entry in verified})
+    manuscript_groups = sorted({annotation_units[entry["source_id"]]["manuscript_split_group"] for entry in verified})
     class_source_coverage: dict[str, set[str]] = defaultdict(set)
     for entry in verified:
-        class_source_coverage[entry["unicode_codepoint"]].add(entry["source_id"])
-    source_split_eligible = len(source_ids) >= 3
+        class_source_coverage[entry["unicode_codepoint"]].add(annotation_units[entry["source_id"]]["manuscript_split_group"])
+    source_split_eligible = len(manuscript_groups) >= 3
     class_coverage = {
         entry["codepoint"]: sorted(class_source_coverage.get(entry["codepoint"], set()))
         for entry in classes
@@ -83,7 +88,7 @@ def main() -> None:
     ]
     trainable = source_split_eligible and not insufficient_codepoints
     if not source_split_eligible:
-        training_blocker = "Need verified glyphs from at least three distinct sources before source-disjoint train/val/test splits."
+        training_blocker = "Need verified glyphs from at least three independent manuscript groups before source-disjoint train/val/test splits."
     elif insufficient_codepoints:
         training_blocker = (
             "Source-disjoint split is structurally possible, but real-data training is blocked: "
@@ -95,6 +100,7 @@ def main() -> None:
         "kind": "old-permic-real-character-yolo-preview",
         "verified_instances": len(verified),
         "sources": source_ids,
+        "manuscript_split_groups": manuscript_groups,
         "assets": assets,
         "source_split_eligible": source_split_eligible,
         "class_source_coverage": class_coverage,

@@ -32,10 +32,11 @@ describe("real character dataset contract", () => {
     ]));
     const annotationUnitIds = new Set(sources.annotation_units.map((entry: { id: string }) => entry.id));
     expect(verified.every((entry: { source_id: string }) => annotationUnitIds.has(entry.source_id))).toBe(true);
+    expect(sources.annotation_units.every((entry: { manuscript_split_group?: string }) => Boolean(entry.manuscript_split_group))).toBe(true);
     expect(regions.regions.find((entry: { crop_id: string }) => entry.crop_id === "volok11-f271v-text")).toMatchObject({
       annotation_unit_id: "volok-11-f271v",
     });
-    expect(exporter).toContain("source_split_eligible = len(source_ids) >= 3");
+    expect(exporter).toContain("source_split_eligible = len(manuscript_groups) >= 3");
     expect(exporter).toContain("classes_without_three_source_coverage");
     expect(exporter).toContain("source-disjoint train/val/test splits");
   });
