@@ -19,5 +19,10 @@
   ],
   "excluded": [
     {"id":"trinity-zuryanskaya-full-icon","reason":"contextual-only; annotate the dedicated inscription crop instead"}
+  ],
+  "annotation_units": [
+    {"id":"likh-360-f274","hosted_source_id":"likh-360-f274-figure-3","folio":"274","manuscript":"Likh. 360"},
+    {"id":"volok-9-f285v","hosted_source_id":"volok-9-11-figures-10-11","folio":"285v","manuscript":"Volok. 9"},
+    {"id":"volok-11-f271v","hosted_source_id":"volok-9-11-figures-10-11","folio":"271v","manuscript":"Volok. 11"}
   ]
 }

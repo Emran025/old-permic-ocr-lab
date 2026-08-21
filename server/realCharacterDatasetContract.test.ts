@@ -20,11 +20,15 @@ describe("real character dataset contract", () => {
     expect(classMap.classes.map((entry: { id: number }) => entry.id)).toEqual([...Array(38).keys()]);
     expect(regions.regions).toHaveLength(12);
     const verified = instances.trim().split("\n").map((line) => JSON.parse(line));
-    expect(verified).toHaveLength(8);
+    expect(verified).toHaveLength(12);
     expect(verified.every((entry: { review_status: string }) => entry.review_status === "verified")).toBe(true);
     expect(verified.map((entry: { unicode_codepoint: string }) => entry.unicode_codepoint)).toEqual([
       "U+10350", "U+10362", "U+10350", "U+1035D", "U+10354", "U+10351", "U+10354", "U+10352",
+      "U+10350", "U+1035C", "U+10359", "U+1035D",
     ]);
+    expect(new Set(verified.map((entry: { source_id: string }) => entry.source_id))).toEqual(new Set([
+      "volok-11-f271v", "likh-360-f274",
+    ]));
     expect(exporter).toContain("len(source_ids) >= 3");
     expect(exporter).toContain("source-disjoint train/val/test splits");
   });
