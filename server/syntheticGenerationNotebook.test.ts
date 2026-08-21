@@ -56,8 +56,12 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("publish_latest_checkpoint");
     expect(code).toContain("restore_latest_checkpoint_from_github");
     expect(code).toContain("--force-with-lease");
-    expect(code).toContain("USE_COLAB_SECRET_FALLBACK = False");
+    expect(code).toContain("USE_COLAB_SECRET_FALLBACK = True");
     expect(code).toContain('userdata.get("GITHUB_WRITE_TOKEN")');
+    expect(code).toContain("fallback_error");
+    expect(code).toContain("تفاصيل Git");
+    expect(code).toContain("لم يمس ذلك checkpoint التدريب");
+    expect(code).toContain("if repo_publish_dir.exists()");
     expect(code).toContain("sync_latest_checkpoint");
     expect(code).toContain('"--amend", "-m", message');
     expect(code).toContain("assert_resume_is_compatible");
