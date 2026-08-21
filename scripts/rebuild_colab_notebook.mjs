@@ -1057,10 +1057,15 @@ print(json.dumps(RELEASE, ensure_ascii=False, indent=2))
 PUBLISH_RELEASE = False
 PUBLISH_BRANCH = "colab-results"
 MAX_GITHUB_WEIGHT_BYTES = 90 * 1024 * 1024
-USE_COLAB_SECRET_FALLBACK = False
+# عند فشل جلسة Colab الكتابية، جرّب Secret اختياريًا ولا تخزنه في remote أو ملف.
+USE_COLAB_SECRET_FALLBACK = True
 
 if PUBLISH_RELEASE:
+    import shutil
     repo_publish_dir = PROJECT_ROOT / "artifacts" / "published" / release_id
+    # تتيح إعادة محاولة خلية النشر في الجلسة ذاتها بعد فشل دفع سابق؛ لا تلمس أي checkpoint.
+    if repo_publish_dir.exists():
+        shutil.rmtree(repo_publish_dir)
     repo_publish_dir.mkdir(parents=True, exist_ok=False)
     published_assets = []
     for filename, kind in (("metrics.json", "metrics"), ("data_contract.json", "data_contract"), ("class_map.json", "class_map")):
@@ -1116,19 +1121,32 @@ if PUBLISH_RELEASE:
     subprocess.run(["git", "-C", str(PROJECT_ROOT), "config", "user.email", "colab@local.invalid"], check=True)
     subprocess.run(["git", "-C", str(PROJECT_ROOT), "commit", "-m", f"artifacts: publish {release_id}"], check=True)
     push = subprocess.run(["git", "-C", str(PROJECT_ROOT), "push", "origin", f"HEAD:{PUBLISH_BRANCH}"], text=True, capture_output=True)
+    fallback_error = None
     if push.returncode != 0 and USE_COLAB_SECRET_FALLBACK:
-        from base64 import b64encode
-        from google.colab import userdata
-        github_write_token = userdata.get("GITHUB_WRITE_TOKEN")
-        assert github_write_token, "لم يعثر Colab على Secret باسم GITHUB_WRITE_TOKEN."
-        write_authorization = b64encode(f"x-access-token:{github_write_token}".encode("utf-8")).decode("ascii")
-        push = subprocess.run([
-            "git", "-C", str(PROJECT_ROOT), "-c", f"http.extraHeader=AUTHORIZATION: basic {write_authorization}",
-            "push", "origin", f"HEAD:{PUBLISH_BRANCH}"
-        ], text=True, capture_output=True)
-        del github_write_token, write_authorization
+        try:
+            from base64 import b64encode
+            from google.colab import userdata
+            github_write_token = userdata.get("GITHUB_WRITE_TOKEN")
+            assert github_write_token, "لم يعثر Colab على Secret باسم GITHUB_WRITE_TOKEN."
+            write_authorization = b64encode(f"x-access-token:{github_write_token}".encode("utf-8")).decode("ascii")
+            push = subprocess.run([
+                "git", "-C", str(PROJECT_ROOT), "-c", f"http.extraHeader=AUTHORIZATION: basic {write_authorization}",
+                "push", "origin", f"HEAD:{PUBLISH_BRANCH}"
+            ], text=True, capture_output=True)
+        except Exception as error:
+            fallback_error = f"{type(error).__name__}: {error}"
+        finally:
+            if "github_write_token" in locals(): del github_write_token
+            if "write_authorization" in locals(): del write_authorization
     if push.returncode != 0:
-        raise RuntimeError("تعذر دفع الإصدار من shell. تحقق من جلسة GitHub في Colab أو فعّل USE_COLAB_SECRET_FALLBACK مع Colab Secret محدود الكتابة؛ لا تضع token داخل الدفتر.")
+        git_detail = "\n".join(part for part in (push.stderr.strip(), push.stdout.strip()) if part).strip()[-2000:] or "لم يعرض Git تفاصيل إضافية."
+        fallback_detail = f"\nتفاصيل Secret البديل: {fallback_error}" if fallback_error else ""
+        raise RuntimeError(
+            "فشل دفع الإصدار إلى GitHub؛ لم يُنشر release.json ولم يمس ذلك checkpoint التدريب. "
+            "تحقق من أن GITHUB_WRITE_TOKEN موجود في Colab ومفعّل له Notebook access، وأنه fine-grained للمستودع "
+            "Emran025/old-permic-ocr-lab بصلاحية Contents: Write. لا تضع token داخل الدفتر."
+            f"\nتفاصيل Git: {git_detail}{fallback_detail}"
+        )
     print("نُشر الإصدار إلى فرع GitHub:", PUBLISH_BRANCH)
 else:
     print("النشر مغلق. راجع metrics.json وrelease.json ثم غيّر PUBLISH_RELEASE إلى True فقط عند القبول.")
