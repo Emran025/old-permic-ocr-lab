@@ -91,9 +91,9 @@ export default function Home() {
     }
     try {
       const created = await upload.mutateAsync({ filename: fileName, dataUrl });
-      const result = await run.mutateAsync({ analysisId: created.id });
+      const result = await run.mutateAsync({ analysisId: created.id, confidenceThreshold: confidence[0], iouThreshold: iou[0] });
       if (result) setAnalysis(result as PersistedAnalysis);
-      toast.message("حُفظت الصورة، وفُحصت حالة نموذج البرمية القديمة.");
+      toast.message("حُفظت الصورة ونُفذ استدلال فعلي بالوزن المنشور.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذر حفظ الصورة.");
     }
@@ -122,7 +122,7 @@ export default function Home() {
                 من الأثر إلى <span className="text-[#a56b37]">قراءة قابلة للمراجعة</span>.
               </h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-[#62675e]">
-                ارفع صورة لنقش أو مخطوطة بالبرمية القديمة، واحتفظ بها ضمن سجل بحثي. عند ربط وزن YOLO مدرّب، ستظهر مناطق الكشف والثقة والنص المستخرج فوق الصورة نفسها.
+                ارفع صورة لنقش أو مخطوطة بالبرمية القديمة، واحتفظ بها ضمن سجل بحثي. يستخدم المختبر وزن YOLO منشورًا لتوليد مناطق كشف وثقة ونص مقترح فوق الصورة نفسها، مع بقاء القراءة خاضعة لمراجعتك.
               </p>
               <div className="mt-8 flex flex-wrap gap-3 text-xs text-[#536056]">
                 <span className="flex items-center gap-2"><ShieldCheck className="size-4 text-[#2b7a57]" />سجل شخصي للصور</span>
@@ -145,6 +145,12 @@ export default function Home() {
             <div className="mb-7 flex gap-3 rounded-2xl border border-[#ead6b9] bg-[#fff8ed] p-4 text-sm text-[#79542d]">
               <AlertCircle className="mt-0.5 size-5 shrink-0" />
               <div><strong>النموذج غير مربوط بعد.</strong><span className="mr-1">{status.data?.message || "سجّل الدخول ثم اربط وزن YOLO مدربًا للبرمية القديمة من خلال خدمة الاستدلال."}</span></div>
+            </div>
+          )}
+          {status.data?.available && status.data.syntheticOnly && (
+            <div className="mb-7 flex gap-3 rounded-2xl border border-[#d9d8b4] bg-[#fffdec] p-4 text-sm text-[#6b6334]">
+              <AlertCircle className="mt-0.5 size-5 shrink-0" />
+              <div><strong>وزن صناعي منشور ومربوط.</strong><span className="mr-1">{status.data.message}</span></div>
             </div>
           )}
           <div className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr]">

@@ -1,5 +1,5 @@
 import { COOKIE_NAME } from "@shared/const";
-import { MODEL_STATUS } from "@shared/oldPermicOcr";
+import { normalizeDetection } from "@shared/oldPermicOcr";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -17,11 +17,13 @@ import {
   listAnalysesForUser,
   listAnnotationImagesForUser,
   updateAnalysisModelStatus,
+  updateAnalysisInferenceResult,
   updateAnnotationImageForUser,
 } from "./db";
 import { parseImageDataUrl, safeFileName } from "./oldPermicOcr";
-import { storagePut } from "./storage";
+import { storageGetSignedUrl, storagePut } from "./storage";
 import { getTrainingReleaseOverview, syncPublishedTrainingRelease } from "./trainingReleaseSync";
+import { getPublishedOcrModelStatus, inferOldPermicCharacters } from "./onnxOldPermicInference";
 
 const annotationBoxInput = z.object({
   id: z.string().min(1).max(96),
@@ -53,7 +55,7 @@ export const appRouter = router({
   }),
 
   ocr: router({
-    modelStatus: protectedProcedure.query(() => MODEL_STATUS),
+    modelStatus: protectedProcedure.query(() => getPublishedOcrModelStatus()),
     upload: protectedProcedure
       .input(
         z.object({
@@ -76,10 +78,26 @@ export const appRouter = router({
         });
         return analysis;
       }),
-    run: protectedProcedure.input(z.object({ analysisId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    run: protectedProcedure.input(z.object({
+      analysisId: z.number().int().positive(),
+      confidenceThreshold: z.number().min(0.05).max(0.95).default(0.25),
+      iouThreshold: z.number().min(0.05).max(0.95).default(0.45),
+    })).mutation(async ({ ctx, input }) => {
       const analysis = await getAnalysisForUser(input.analysisId, ctx.user.id);
       if (!analysis) return null;
-      return updateAnalysisModelStatus(input.analysisId, ctx.user.id);
+      const status = await getPublishedOcrModelStatus();
+      if (!status.available) return updateAnalysisModelStatus(input.analysisId, ctx.user.id);
+      try {
+        const signedUrl = await storageGetSignedUrl(analysis.imageKey);
+        const imageResponse = await fetch(signedUrl);
+        if (!imageResponse.ok) throw new Error(`تعذر قراءة الصورة المحفوظة للاستدلال (${imageResponse.status}).`);
+        const inference = await inferOldPermicCharacters(Buffer.from(await imageResponse.arrayBuffer()), input.confidenceThreshold, input.iouThreshold);
+        const detections = inference.detections.map((detection) => normalizeDetection(detection, inference.imageWidth, inference.imageHeight));
+        return updateAnalysisInferenceResult(input.analysisId, ctx.user.id, { status: "completed", extractedText: inference.extractedText, detections });
+      } catch (error) {
+        await updateAnalysisInferenceResult(input.analysisId, ctx.user.id, { status: "failed", extractedText: "", detections: [] });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `فشل الاستدلال الفعلي: ${error instanceof Error ? error.message : "خطأ غير معروف."}` });
+      }
     }),
     list: protectedProcedure.query(({ ctx }) => listAnalysesForUser(ctx.user.id)),
   }),

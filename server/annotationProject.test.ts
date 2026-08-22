@@ -39,6 +39,7 @@ vi.mock("./db", () => ({
   listAnalysesForUser: vi.fn(),
   listAnnotationImagesForUser: vi.fn(async () => [image]),
   updateAnalysisModelStatus: vi.fn(),
+  updateAnalysisInferenceResult: vi.fn(),
   updateAnnotationImageForUser: vi.fn(async () => image),
 }));
 

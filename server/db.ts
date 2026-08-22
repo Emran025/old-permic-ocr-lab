@@ -142,6 +142,20 @@ export async function updateAnalysisModelStatus(analysisId: number, userId: numb
   return getAnalysisForUser(analysisId, userId);
 }
 
+export async function updateAnalysisInferenceResult(
+  analysisId: number,
+  userId: number,
+  result: { status: "completed" | "failed"; extractedText: string; detections: unknown[] },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  await db
+    .update(analyses)
+    .set({ status: result.status, extractedText: result.extractedText, detections: result.detections, completedAt: new Date() })
+    .where(and(eq(analyses.id, analysisId), eq(analyses.userId, userId)));
+  return getAnalysisForUser(analysisId, userId);
+}
+
 export async function getLatestTrainingRelease() {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة.");
