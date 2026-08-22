@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import OldPermicLabeler, { cropTileFilename, displayedBox, OLD_PERMIC_CLASSES, rotatePoint, unrotatePoint } from "./OldPermicLabeler";
+import OldPermicLabeler, { CROP_DIALOG_CONTENT_CLASS, cropTileFilename, displayedBox, OLD_PERMIC_CLASSES, rotatePoint, unrotatePoint } from "./OldPermicLabeler";
 
 vi.mock("@/components/ResearchHeader", () => ({ default: () => <header>التنقل</header> }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ isAuthenticated: false }) }));
@@ -33,6 +33,8 @@ describe("OldPermicLabeler", () => {
     expect(markup).toContain('max="400"');
     expect(markup).toContain("تقطيع قبل الإضافة");
     expect(markup).toContain("ارسم المقاطع المطلوبة");
+    expect(CROP_DIALOG_CONTENT_CLASS).toContain("w-[min(96vw,1560px)]");
+    expect(CROP_DIALOG_CONTENT_CLASS).toContain("max-w-[1560px]");
   });
 
   it("maps rotated display coordinates back to the original YOLO coordinate space", () => {
