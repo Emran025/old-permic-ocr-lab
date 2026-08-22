@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -77,7 +77,7 @@ describe("synthetic Old Permic glyph assets", () => {
     roots.push(root);
     const generator = join(process.cwd(), "training", "synthetic", "generate_old_permic_synthetic.py");
     const font = "/usr/share/fonts/truetype/noto/NotoSansOldPermic-Regular.ttf";
-    execFileSync("python3", [generator, "--output", root, "--samples", "24", "--seed", "20350", "--layout", "scattered-glyph", "--profile", "controlled-deformation", "--balanced-classes", "--font", font], { encoding: "utf8" });
+    execFileSync("python3", [generator, "--output", root, "--samples", "24", "--seed", "20350", "--layout", "scattered-glyph", "--profile", "controlled-deformation", "--balanced-classes", "--image-size", "448", "--image-format", "jpeg", "--jpeg-quality", "70", "--font", font], { encoding: "utf8" });
 
     const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
     const records = readFileSync(join(root, "assets.jsonl"), "utf8").trim().split("\n").map((row) => JSON.parse(row));
@@ -86,7 +86,12 @@ describe("synthetic Old Permic glyph assets", () => {
     );
 
     expect(manifest.layout).toBe("scattered-glyph");
+    expect(manifest).toMatchObject({ image_size: 448, image_format: "jpeg", jpeg_quality: 70 });
     expect(records.every((record) => record.unit === "S0-d-scattered-glyph-asset" && record.sequence.length === 1)).toBe(true);
+    expect(records.every((record) => record.image.endsWith(".jpg"))).toBe(true);
+    const images = ["train", "val", "test"].flatMap((split) => readdirSync(join(root, "images", split)).map((name) => join(root, "images", split, name)));
+    expect(images.every((image) => readFileSync(image).subarray(0, 2).equals(Buffer.from([0xff, 0xd8])))).toBe(true);
+    expect(images.reduce((total, image) => total + statSync(image).size, 0)).toBeLessThan(1_000_000);
     expect(records.every((record) => record.page_geometry.curriculum.spatial_policy === "uniform-safe-noncentral-grid-placement")).toBe(true);
     expect(boxes.every(([, , , width, height]) => Math.max(width, height) < 0.55)).toBe(true);
     expect(Math.max(...boxes.map(([, x]) => x)) - Math.min(...boxes.map(([, x]) => x))).toBeGreaterThan(0.25);
