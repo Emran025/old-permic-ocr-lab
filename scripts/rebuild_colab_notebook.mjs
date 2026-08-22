@@ -164,7 +164,8 @@ CURRICULUM = {
     },
     "S0-d1": {
         "profile": "controlled-deformation", "layout": "scattered-glyph", "samples": 7600,
-        "seed": 20350, "image_size": 640, "font_size": 36, "balanced_classes": True, "workers": 6,
+        "seed": 20350, "image_size": 448, "font_size": 36, "balanced_classes": True, "workers": 6,
+        "image_format": "jpeg", "jpeg_quality": 70,
     },
     "S1": {
         "profile": "manuscript-inspired", "layout": "ordered-lines", "samples": 1000,
@@ -259,6 +260,8 @@ else:
         layout=GENERATION["layout"],
         balanced_classes=GENERATION["balanced_classes"],
         workers=GENERATION["workers"],
+        image_format=GENERATION.get("image_format", "png"),
+        jpeg_quality=GENERATION.get("jpeg_quality", 75),
     )
 subprocess.run([sys.executable, str(VALIDATOR_PATH), str(DATASET_ROOT)], check=True)
 print(json.dumps(manifest, ensure_ascii=False, indent=2))
