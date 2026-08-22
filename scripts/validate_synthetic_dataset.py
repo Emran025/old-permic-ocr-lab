@@ -25,7 +25,7 @@ def validate(dataset_root: Path) -> dict[str, int]:
     for split in ("train", "val", "test"):
         image_dir = dataset_root / "images" / split
         label_dir = dataset_root / "labels" / split
-        images = sorted(image_dir.glob("*.png"))
+        images = sorted([*image_dir.glob("*.png"), *image_dir.glob("*.jpg"), *image_dir.glob("*.jpeg")])
         labels = sorted(label_dir.glob("*.txt"))
         if len(images) != len(labels):
             raise ValueError(f"{split} has {len(images)} images but {len(labels)} labels.")
