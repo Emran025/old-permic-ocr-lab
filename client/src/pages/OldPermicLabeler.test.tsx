@@ -12,6 +12,7 @@ vi.mock("@/lib/trpc", () => ({
       upload: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
       importSource: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
       save: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
+      delete: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
       exportReviewReady: { useQuery: () => ({ data: undefined, refetch: vi.fn(), isFetching: false }) },
     },
   },
@@ -34,7 +35,8 @@ describe("OldPermicLabeler", () => {
     expect(markup).toContain("تقطيع قبل الإضافة");
     expect(markup).toContain("ارسم المقاطع المطلوبة");
     expect(CROP_DIALOG_CONTENT_CLASS).toContain("w-[min(96vw,1560px)]");
-    expect(CROP_DIALOG_CONTENT_CLASS).toContain("max-w-[1560px]");
+    expect(CROP_DIALOG_CONTENT_CLASS).toContain("sm:max-w-[1560px]");
+    expect(markup).toContain("حذف الصورة");
   });
 
   it("maps rotated display coordinates back to the original YOLO coordinate space", () => {

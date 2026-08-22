@@ -262,4 +262,13 @@ export async function updateAnnotationImageForUser(
   return getAnnotationImageForUser(imageId, userId);
 }
 
+export async function deleteAnnotationImageForUser(imageId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة.");
+  const existing = await getAnnotationImageForUser(imageId, userId);
+  if (!existing) return undefined;
+  await db.delete(annotationImages).where(and(eq(annotationImages.id, imageId), eq(annotationImages.userId, userId)));
+  return existing;
+}
+
 // TODO: add feature queries here as your schema grows.

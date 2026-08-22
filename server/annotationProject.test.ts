@@ -31,6 +31,7 @@ const image = {
 vi.mock("./db", () => ({
   createAnalysis: vi.fn(),
   createAnnotationImage: vi.fn(),
+  deleteAnnotationImageForUser: vi.fn(async () => image),
   getAnalysisForUser: vi.fn(),
   getAnnotationImageBySourceLibraryId: vi.fn(async () => image),
   getAnnotationImageForUser: vi.fn(async () => image),
@@ -104,5 +105,11 @@ describe("annotation project router", () => {
     expect(result.blockers).toContain("لا توجد صورة مراجعة في تقسيم train.");
     expect(result.blockers).toContain("لا توجد صورة مراجعة في تقسيم val.");
     expect(result.blockers).toContain("لا توجد صورة مراجعة في تقسيم test.");
+  });
+
+  it("deletes only the caller's image record and its stored annotation boxes", async () => {
+    const caller = appRouter.createCaller(context());
+    const result = await caller.annotation.delete({ imageId: 7 });
+    expect(result).toEqual({ id: 7, originalFilename: "volok-11-f268-figure-12.jpg", removedBoxCount: 0 });
   });
 });

@@ -9,6 +9,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   createAnalysis,
   createAnnotationImage,
+  deleteAnnotationImageForUser,
   getAnalysisForUser,
   getAnnotationImageBySourceLibraryId,
   getAnnotationImageForUser,
@@ -203,6 +204,17 @@ export const appRouter = router({
           rotationDegrees: input.rotationDegrees,
           reviewedAt: ["reviewed", "approved"].includes(input.annotationStatus) ? new Date() : null,
         });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ imageId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const deleted = await deleteAnnotationImageForUser(input.imageId, ctx.user.id);
+        if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "لم تُعثر الصورة داخل مشروع الوسم." });
+        return {
+          id: deleted.id,
+          originalFilename: deleted.originalFilename,
+          removedBoxCount: Array.isArray(deleted.boxes) ? deleted.boxes.length : 0,
+        };
       }),
     exportReviewReady: protectedProcedure.query(async ({ ctx }) => {
       const images = await listAnnotationImagesForUser(ctx.user.id);

@@ -3,6 +3,7 @@ import ResearchHeader from "@/components/ResearchHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Slider } from "@/components/ui/slider";
 import { startLogin } from "@/const";
 import { primaryTextSources } from "@/data/primarySourceGallery";
@@ -54,7 +55,7 @@ type LabelImage = Omit<AnnotationRecord, "boxes"> & { boxes: BoundingBox[] };
 type DraftBox = { x: number; y: number; endX: number; endY: number };
 
 const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-export const CROP_DIALOG_CONTENT_CLASS = "w-[min(96vw,1560px)] max-w-[1560px] max-h-[94vh] overflow-y-auto border-[#d8cdbb] bg-[#fffdf9] p-0 text-[#28372f]";
+export const CROP_DIALOG_CONTENT_CLASS = "w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-[min(96vw,1560px)] sm:max-w-[1560px] max-h-[94vh] overflow-y-auto border-[#d8cdbb] bg-[#fffdf9] p-0 text-[#28372f]";
 const statusCopy: Record<AnnotationStatus, string> = {
   in_progress: "قيد الوسم", needs_review: "تحتاج مراجعة", reviewed: "مراجعة", approved: "معتمدة", excluded: "مستبعدة",
 };
@@ -149,6 +150,7 @@ export default function OldPermicLabeler() {
   const uploadImage = trpc.annotation.upload.useMutation();
   const importSource = trpc.annotation.importSource.useMutation();
   const saveImage = trpc.annotation.save.useMutation();
+  const deleteImage = trpc.annotation.delete.useMutation();
   const [images, setImages] = useState<LabelImage[]>([]);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
   const [activeClassId, setActiveClassId] = useState(0);
@@ -162,6 +164,7 @@ export default function OldPermicLabeler() {
   const [cropDraft, setCropDraft] = useState<DraftBox | null>(null);
   const [cropNaturalSize, setCropNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [isSavingCrops, setIsSavingCrops] = useState(false);
+  const [imagePendingDelete, setImagePendingDelete] = useState<LabelImage | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const cropInput = useRef<HTMLInputElement>(null);
@@ -301,6 +304,23 @@ export default function OldPermicLabeler() {
       toast.success("حُفظت الصناديق وحالة المراجعة داخل مشروع البيانات.");
     } catch (error) { toast.error(error instanceof Error ? error.message : "تعذر حفظ حالة الصورة."); }
   };
+  const deleteSelectedImage = async () => {
+    const target = imagePendingDelete;
+    if (!target || !requireAuth()) return;
+    try {
+      const deleted = await deleteImage.mutateAsync({ imageId: target.id });
+      setImages((current) => {
+        const remaining = current.filter((image) => image.id !== target.id);
+        setActiveImageId((activeId) => activeId === target.id ? remaining[0]?.id ?? null : activeId);
+        return remaining;
+      });
+      setDraft(null);
+      setIsDirty(false);
+      setImagePendingDelete(null);
+      await Promise.all([workspace.refetch(), reviewReady.refetch()]);
+      toast.success(`حُذفت الصورة و${deleted.removedBoxCount} صندوقًا مرتبطًا بها من مشروع الوسم.`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "تعذر حذف الصورة من مشروع الوسم."); }
+  };
   const exportDataset = async () => {
     if (!requireAuth()) return;
     const result = await reviewReady.refetch();
@@ -351,7 +371,7 @@ export default function OldPermicLabeler() {
         <section className="overflow-hidden rounded-[1.6rem] border border-[#d8d0c2] bg-[#fbfaf6] shadow-[0_18px_50px_rgba(47,51,40,0.09)]">
           <header className="flex flex-col gap-4 border-b border-[#ded8ca] bg-[#fffdf9] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-xl bg-[#27463b] text-[#f5e9cd] shadow-[0_7px_15px_rgba(39,70,59,0.18)]"><BoxSelect className="size-5" /></span><div><h1 className="text-base font-bold tracking-tight">ورشة وسم البرمية القديمة</h1><p className="mt-0.5 text-[10px] font-semibold tracking-[0.16em] text-[#9a6a38]">REVIEWED REAL-DATA WORKSPACE</p></div><Badge variant="outline" className="mr-2 border-[#d9c49c] bg-[#fffaf0] text-[11px] text-[#77542d]">YOLO Detection</Badge></div>
-            <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-[#dfe5d7] bg-[#f4f8f1] px-3 py-1 text-xs text-[#446051]"><ShieldCheck className="ml-1 inline size-3.5" />{reviewedCount} مراجعة / {images.length || 0}</span><Button variant="outline" size="sm" className="border-[#ddd3c0] bg-white text-[#48554a]" onClick={() => toast.message("أضف صورة من مكتبة المصادر أو ارفع صورة جديدة. ارسم محارف مرئية فقط، ثم وثّق المصدر والحقوق والتقسيم قبل تعليمها مراجعة.")}><Info className="ml-2 size-3.5" />كيف تعمل؟</Button><Button variant="outline" size="sm" className="border-[#b9935f] bg-[#fffaf0] text-[#715027]" onClick={() => void exportDataset()} disabled={reviewReady.isFetching}><Download className="ml-2 size-3.5" />تصدير المراجَع</Button><Button size="sm" className="bg-[#27463b] text-white hover:bg-[#1f3a30]" onClick={saveActive} disabled={!activeImage || saveImage.isPending}>{saveImage.isPending ? <Loader2 className="ml-2 size-3.5 animate-spin" /> : <Save className="ml-2 size-3.5" />}{isDirty ? "حفظ التغييرات" : "حفظ الحالة"}</Button></div>
+            <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-[#dfe5d7] bg-[#f4f8f1] px-3 py-1 text-xs text-[#446051]"><ShieldCheck className="ml-1 inline size-3.5" />{reviewedCount} مراجعة / {images.length || 0}</span><Button variant="outline" size="sm" className="border-[#ddd3c0] bg-white text-[#48554a]" onClick={() => toast.message("أضف صورة من مكتبة المصادر أو ارفع صورة جديدة. ارسم محارف مرئية فقط، ثم وثّق المصدر والحقوق والتقسيم قبل تعليمها مراجعة.")}><Info className="ml-2 size-3.5" />كيف تعمل؟</Button><Button variant="outline" size="sm" className="border-[#b9935f] bg-[#fffaf0] text-[#715027]" onClick={() => void exportDataset()} disabled={reviewReady.isFetching}><Download className="ml-2 size-3.5" />تصدير المراجَع</Button><Button variant="outline" size="sm" className="border-[#d69a86] bg-[#fff8f5] text-[#a34b35] hover:bg-[#ffefe9]" onClick={() => setImagePendingDelete(activeImage)} disabled={!activeImage || deleteImage.isPending}><Trash2 className="ml-2 size-3.5" />حذف الصورة</Button><Button size="sm" className="bg-[#27463b] text-white hover:bg-[#1f3a30]" onClick={saveActive} disabled={!activeImage || saveImage.isPending}>{saveImage.isPending ? <Loader2 className="ml-2 size-3.5 animate-spin" /> : <Save className="ml-2 size-3.5" />}{isDirty ? "حفظ التغييرات" : "حفظ الحالة"}</Button></div>
           </header>
           {!isAuthenticated ? <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ead6b9] bg-[#fff8ed] px-5 py-3 text-sm text-[#79542d]"><span>سجّل الدخول لحفظ صورك وصناديقك وحالات المراجعة داخل مشروع بياناتك.</span><Button size="sm" className="bg-[#7c552c] text-white hover:bg-[#68451f]" onClick={startLogin}>تسجيل الدخول</Button></div> : null}
 
@@ -388,6 +408,12 @@ export default function OldPermicLabeler() {
             <DialogFooter className="border-t border-[#e3dccf] px-5 py-4 sm:px-7"><Button variant="outline" onClick={closeCropDialog} disabled={isSavingCrops}>إلغاء</Button><Button className="bg-[#27463b] text-white hover:bg-[#1f3a30]" onClick={() => void saveCropAreas()} disabled={!cropAreas.length || isSavingCrops}>{isSavingCrops ? <Loader2 className="ml-2 size-4 animate-spin" /> : <Upload className="ml-2 size-4" />}أنشئ المقاطع واحفظها</Button></DialogFooter>
           </DialogContent> : null}
         </Dialog>
+        <AlertDialog open={Boolean(imagePendingDelete)} onOpenChange={(open) => { if (!open && !deleteImage.isPending) setImagePendingDelete(null); }}>
+          <AlertDialogContent dir="rtl" className="border-[#d8cdbb] bg-[#fffdf9] text-right text-[#28372f]">
+            <AlertDialogHeader><AlertDialogTitle>حذف الصورة من مشروع الوسم؟</AlertDialogTitle><AlertDialogDescription className="leading-6 text-[#6f7068]">سيحذف هذا الإجراء صورة «{imagePendingDelete?.sourceTitle ?? ""}» وكل صناديق الوسم المرتبطة بها من مشروعك. لن تظهر بعد ذلك في قائمة الصور أو ضمن أي تصدير YOLO جديد. لا يحذف هذا الإجراء المصدر العام من مدونة المصادر.</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogFooter><AlertDialogCancel disabled={deleteImage.isPending}>إلغاء</AlertDialogCancel><AlertDialogAction className="bg-[#a54735] text-white hover:bg-[#8f392a]" onClick={() => void deleteSelectedImage()} disabled={deleteImage.isPending}>{deleteImage.isPending ? <Loader2 className="ml-2 size-4 animate-spin" /> : <Trash2 className="ml-2 size-4" />}حذف الصورة والوسوم</AlertDialogAction></AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );
