@@ -21,6 +21,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 DEFAULT_FONT_PATH = Path("/usr/share/fonts/truetype/noto/NotoSansOldPermic-Regular.ttf")
 LAYOUTS = ("isolated-glyph", "scattered-glyph", "ordered-lines", "structured-pages")
+IMAGE_FORMATS = ("png", "jpeg")
+IMAGE_SUFFIXES = {"png": ".png", "jpeg": ".jpg"}
 
 
 @dataclass(frozen=True)
@@ -335,13 +337,18 @@ def render_sample(
 
 
 def render_and_write_sample(
-    task: tuple[int, str, int, int | None, Path, Profile, int, int, Path, str, list[dict[str, str]]]
+    task: tuple[int, str, int, int | None, Path, Profile, int, int, Path, str, str, int, list[dict[str, str]]]
 ) -> dict[str, object]:
     """Render and save one independent asset; task order, seeds, and names stay deterministic across worker counts."""
-    index, split, sample_seed, class_id_override, output_dir, profile, image_size, font_size, font_path, layout, characters = task
+    index, split, sample_seed, class_id_override, output_dir, profile, image_size, font_size, font_path, layout, image_format, jpeg_quality, characters = task
     image, labels, sequence, geometry = render_sample(layout, characters, profile, sample_seed, image_size, font_size, font_path, class_id_override)
     stem = f"old_permic_{layout}_{profile.name}_{index:05d}"
-    image.save(output_dir / "images" / split / f"{stem}.png")
+    image_suffix = IMAGE_SUFFIXES[image_format]
+    image_path = output_dir / "images" / split / f"{stem}{image_suffix}"
+    if image_format == "jpeg":
+        image.save(image_path, format="JPEG", quality=jpeg_quality, optimize=True, progressive=False, subsampling=0)
+    else:
+        image.save(image_path, format="PNG", optimize=True)
     with (output_dir / "labels" / split / f"{stem}.txt").open("w", encoding="utf-8") as label_file:
         for class_id, center_x, center_y, width, height in labels:
             label_file.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
@@ -362,7 +369,7 @@ def render_and_write_sample(
         "class_ids": [record[0] for record in labels],
         "master_glyph_ids": [characters[record[0]]["codepoint"] for record in labels],
         "page_geometry": geometry,
-        "image": f"images/{split}/{stem}.png",
+        "image": f"images/{split}/{stem}{image_suffix}",
         "label": f"labels/{split}/{stem}.txt",
     }
 
@@ -378,6 +385,8 @@ def write_dataset(
     layout: str,
     balanced_classes: bool = False,
     workers: int = 1,
+    image_format: str = "png",
+    jpeg_quality: int = 75,
 ) -> dict[str, object]:
     if not font_path.exists():
         raise FileNotFoundError(f"Required font is missing: {font_path}")
@@ -386,6 +395,10 @@ def write_dataset(
         raise ValueError("--balanced-classes is available only for single-glyph S0 or S0-d assets.")
     if workers < 1:
         raise ValueError("--workers must be at least 1")
+    if image_format not in IMAGE_FORMATS:
+        raise ValueError(f"Unsupported image format: {image_format}")
+    if not 1 <= jpeg_quality <= 95:
+        raise ValueError("JPEG quality must be between 1 and 95")
     if output_dir.exists():
         shutil.rmtree(output_dir)
     split_names = ("train", "val", "test")
@@ -414,7 +427,7 @@ def write_dataset(
         if balanced_classes:
             class_id_override = split_class_positions[split] % len(characters)
             split_class_positions[split] += 1
-        tasks.append((index, split, sample_seed, class_id_override, output_dir, profile, image_size, font_size, font_path, layout, characters))
+        tasks.append((index, split, sample_seed, class_id_override, output_dir, profile, image_size, font_size, font_path, layout, image_format, jpeg_quality, characters))
     if workers == 1:
         asset_records = [render_and_write_sample(task) for task in tasks]
     else:
@@ -434,6 +447,8 @@ def write_dataset(
         "seed": seed,
         "samples": samples,
         "image_size": image_size,
+        "image_format": image_format,
+        "jpeg_quality": jpeg_quality if image_format == "jpeg" else None,
         "font_size": font_size,
         "font": str(font_path),
         "font_sha256": sha256_file(font_path),
@@ -459,12 +474,17 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=10350)
     parser.add_argument("--image-size", type=int, default=640)
     parser.add_argument("--font-size", type=int, default=58)
+    parser.add_argument("--image-format", choices=IMAGE_FORMATS, default="png", help="PNG for lossless baselines or JPEG for compact synthetic snapshots.")
+    parser.add_argument("--jpeg-quality", type=int, default=75, help="Deterministic JPEG quality when --image-format=jpeg.")
     parser.add_argument("--workers", type=int, default=1, help="Independent rendering workers; output stays deterministic across worker counts.")
     parser.add_argument("--font", type=Path, default=DEFAULT_FONT_PATH, help="Path to a font containing Old Permic Unicode glyphs.")
     args = parser.parse_args()
     if args.samples < 1:
         raise ValueError("--samples must be at least 1")
-    manifest = write_dataset(args.output, PROFILES[args.profile], args.samples, args.seed, args.image_size, args.font_size, args.font, args.layout, args.balanced_classes, args.workers)
+    manifest = write_dataset(
+        args.output, PROFILES[args.profile], args.samples, args.seed, args.image_size, args.font_size, args.font, args.layout,
+        args.balanced_classes, args.workers, args.image_format, args.jpeg_quality,
+    )
     print(json.dumps(manifest, ensure_ascii=False))
 
 
