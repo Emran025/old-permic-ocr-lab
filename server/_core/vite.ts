@@ -6,6 +6,11 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import viteConfig from "../../vite.config";
 
+export function isApiRequest(url: string) {
+  const pathname = url.split("?", 1)[0] ?? url;
+  return pathname === "/api" || pathname.startsWith("/api/");
+}
+
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
@@ -23,6 +28,10 @@ export async function setupVite(app: Express, server: Server) {
   app.use(vite.middlewares);
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
+    if (isApiRequest(url)) {
+      res.status(404).json({ error: "API_ROUTE_NOT_FOUND", message: "لم يُعثر على مسار API المطلوب." });
+      return;
+    }
 
     try {
       const clientTemplate = path.resolve(
@@ -61,7 +70,11 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  app.use("*", (req, res) => {
+    if (isApiRequest(req.originalUrl)) {
+      res.status(404).json({ error: "API_ROUTE_NOT_FOUND", message: "لم يُعثر على مسار API المطلوب." });
+      return;
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
