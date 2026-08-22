@@ -244,9 +244,28 @@ if clone_checkpoint_branch_readonly():
 # لا تفعّل FORCE_REGENERATE_DATASET فوق cache تريد الاحتفاظ بها أو استرجاعها.
 FORCE_REGENERATE_DATASET = False
 CACHED_MANIFEST_PATH = DATASET_ROOT / "manifest.json"
+manifest = None
+
+def cached_manifest_matches_generation(manifest):
+    expected = {
+        "layout": GENERATION["layout"],
+        "profile": PROFILES[GENERATION["profile"]].name,
+        "samples": GENERATION["samples"],
+        "seed": GENERATION["seed"],
+        "image_size": GENERATION["image_size"],
+        "font_size": GENERATION["font_size"],
+        "image_format": GENERATION.get("image_format", "png"),
+        "jpeg_quality": GENERATION.get("jpeg_quality", 75) if GENERATION.get("image_format", "png") == "jpeg" else None,
+    }
+    return all(manifest.get(key) == value for key, value in expected.items())
 
 if CACHED_MANIFEST_PATH.is_file() and not FORCE_REGENERATE_DATASET:
     manifest = json.loads(CACHED_MANIFEST_PATH.read_text(encoding="utf-8"))
+    if not cached_manifest_matches_generation(manifest):
+        print("cache البيانات المحلي يخص إعدادًا سابقًا؛ سيعاد توليد المرحلة الحالية حتميًا.")
+        shutil.rmtree(DATASET_ROOT)
+        manifest = None
+if CACHED_MANIFEST_PATH.is_file() and manifest is not None and not FORCE_REGENERATE_DATASET:
     print("استعمال cache مرحلة مستعاد/موجود:", DATASET_ROOT)
 else:
     manifest = write_dataset(
