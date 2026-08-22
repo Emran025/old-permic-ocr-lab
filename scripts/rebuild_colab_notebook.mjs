@@ -303,8 +303,10 @@ CLASS_NAMES = [item["label"] for item in classes]
 split_summary = {}
 for split in ("train", "val", "test"):
     image_dir, label_dir = DATASET_ROOT / "images" / split, DATASET_ROOT / "labels" / split
-    images, labels = sorted(image_dir.glob("*.png")), sorted(label_dir.glob("*.txt"))
+    images = sorted(path for pattern in ("*.png", "*.jpg", "*.jpeg") for path in image_dir.glob(pattern))
+    labels = sorted(label_dir.glob("*.txt"))
     assert images and len(images) == len(labels), f"خلل عددي في {split}."
+    assert {path.stem for path in images} == {path.stem for path in labels}, f"خلل تطابق أسماء الصور والوسوم في {split}."
     class_counts = Counter()
     for label_path in labels:
         for row in label_path.read_text(encoding="utf-8").splitlines():
@@ -347,7 +349,10 @@ from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
 
 PREVIEW_SPLIT = "train"
-preview_image_path = sorted((DATASET_ROOT / "images" / PREVIEW_SPLIT).glob("*.png"))[0]
+preview_image_path = sorted(
+    path for pattern in ("*.png", "*.jpg", "*.jpeg")
+    for path in (DATASET_ROOT / "images" / PREVIEW_SPLIT).glob(pattern)
+)[0]
 preview_label_path = DATASET_ROOT / "labels" / PREVIEW_SPLIT / f"{preview_image_path.stem}.txt"
 image = Image.open(preview_image_path).convert("RGB")
 draw = ImageDraw.Draw(image)
@@ -1458,7 +1463,10 @@ else:
 
   code("inference-smoke", `
 # 14) اختبار inference محلي على صورة اختبار اصطناعية. لا يغير حالة الموقع ولا يدعي OCR للمخطوطات.
-sample_image = sorted((DATASET_ROOT / "images" / "test").glob("*.png"))[0]
+sample_image = sorted(
+    path for pattern in ("*.png", "*.jpg", "*.jpeg")
+    for path in (DATASET_ROOT / "images" / "test").glob(pattern)
+)[0]
 prediction = evaluation_model.predict(source=str(sample_image), conf=0.25, iou=0.5, device=DEVICE, verbose=False)[0]
 print({"sample": sample_image.name, "detections": len(prediction.boxes)})
 prediction.show()
