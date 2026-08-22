@@ -23,6 +23,10 @@ describe("synthetic generation notebook", () => {
     expect(code).toContain("TRAINING_PLANS = {");
     expect(code).toContain('"S0": {"epochs": 100, "batch_candidates": (8, 6, 4)');
     expect(code).toContain('"layout": "scattered-glyph"');
+    expect(code).toContain('"image_size": 448');
+    expect(code).toContain('"image_format": "jpeg"');
+    expect(code).toContain('"jpeg_quality": 70');
+    expect(code).toContain('image_format=GENERATION.get("image_format", "png")');
     expect(code).toContain('"batch_candidates": (32, 24, 16, 12, 8)');
     expect(code).toContain('"epochs": 60');
     expect(code).toContain("report_gpu_memory");
